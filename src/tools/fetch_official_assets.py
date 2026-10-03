@@ -61,17 +61,25 @@ def main() -> None:
     parser.add_argument(
         "--notebooks", action="store_true", help="Also fetch source notebooks for parity checks"
     )
+    parser.add_argument(
+        "--require-hash-check",
+        action="store_true",
+        help="Require SHA-256 verification against the repository's fixed snapshot; default skips the check because Kaggle upstream files drift over time.",
+    )
     args = parser.parse_args()
     kaggle = Path(sys.executable).parent / "kaggle"
+    enforce_checks = args.require_hash_check
     for agent in OFFICIAL_AGENTS:
-        check(AGENTS / agent["name"] / "deck.csv", agent["deck_sha256"])
+        if enforce_checks:
+            check(AGENTS / agent["name"] / "deck.csv", agent["deck_sha256"])
     destination = args.asset_root / "cg-lib"
     subprocess.run(
         [str(kaggle), "datasets", "download", CG_DATASET, "--unzip", "--path", str(destination)],
         check=True,
     )
-    for filename, expected in CG_SHA256.items():
-        check(args.asset_root / "cg-lib/cg" / filename, expected)
+    if enforce_checks:
+        for filename, expected in CG_SHA256.items():
+            check(args.asset_root / "cg-lib/cg" / filename, expected)
     for agent in OFFICIAL_AGENTS:
         if args.notebooks:
             slug = agent["notebook"].split("/")[1]
@@ -88,8 +96,12 @@ def main() -> None:
                 ],
                 check=True,
             )
-            check(destination / f"{slug}.ipynb", agent["notebook_sha256"])
-    print("Verified official Python API and bundled decks.")
+            if enforce_checks:
+                check(destination / f"{slug}.ipynb", agent["notebook_sha256"])
+    if enforce_checks:
+        print("Verified official Python API and bundled decks.")
+    else:
+        print("Downloaded official assets without SHA-256 verification; use --require-hash-check for fixed-snapshot validation.")
 
 
 if __name__ == "__main__":

@@ -68,6 +68,8 @@ uv run python src/tools/fetch_cg_engine.py
 uv run python src/tools/build_cpp_engine.py
 ```
 
+`fetch_official_assets.py` は現在の Kaggle 配布の `cg-lib` をダウンロードできるように設計されています。リポジトリ側の古い固定ハッシュを厳密に検証したい場合は `--require-hash-check` を使います。
+
 デッキは各エージェントの `deck.csv` として同梱しています。配布C++エンジンは `src/engine/cg/` に取得します。
 配布ソースを変更せずincludeします。C++推論はuv環境に含まれるOpenBLASを利用できます。
 取得元・配置変更・オフライン検証は[エンジンの案内](src/engine/README.md)にあります。
