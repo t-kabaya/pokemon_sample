@@ -13,6 +13,9 @@ RATING_WORKERS ?= 2
 TRANSFORMER_RATING_DIR ?= outputs/mega_lucario/rule_vs_transformer_rating
 TRANSFORMER_RATING_GAMES ?= 100
 TRANSFORMER_RATING_WORKERS ?= 2
+PPO_RATING_DIR ?= outputs/mega_lucario/rule_vs_ppo_rating
+PPO_RATING_GAMES ?= 100
+PPO_RATING_WORKERS ?= 2
 TRANSFORMER_DIR ?= outputs/mega_lucario/transformer_training
 TRANSFORMER_REPLAYS ?= $(TRANSFORMER_DIR)/gbdt_replays
 TRANSFORMER_FEATURES ?= $(TRANSFORMER_DIR)/distillation
@@ -34,6 +37,7 @@ PPO_BATCH_SIZE ?= 1024
 PPO_MICRO_BATCH_SIZE ?= 128
 PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
+PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
 
 .PHONY: mega-lucario-rule-vs-gbdt-viewer
 # Python版の公式シミュレーターでルールベースのメガルカリオとGBDTを1回対戦させ、
@@ -97,6 +101,26 @@ mega-lucario-rule-vs-transformer-rating: $(ARENA)
 	  --games-per-pair $(TRANSFORMER_RATING_GAMES) \
 	  --workers $(TRANSFORMER_RATING_WORKERS)
 	$(PYTHON) src/tools/summarize_match_results.py $(TRANSFORMER_RATING_DIR)/ratings/games.jsonl
+
+.PHONY: mega-lucario-rule-vs-ppo-rating
+# C++ arenaでルールベースのメガルカリオとPPO後Transformerを席交換込みで100戦させ、勝率とratingを計測する。
+# デフォルトでは rule=mega_lucario と ppo=mega_lucario_transformer（$(PPO_BIN)）を対戦させる。
+# 結果は $(PPO_RATING_DIR)/ratings/ に出力される（games.jsonl, ratings.json, ratings.csv）。
+mega-lucario-rule-vs-ppo-rating: $(ARENA)
+	rm -rf $(PPO_RATING_DIR)
+	mkdir -p $(PPO_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "rule": {"agent": "mega_lucario"},' \
+	  '  "ppo": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_BIN))"}' \
+	  '}' > $(PPO_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(PPO_RATING_DIR)/roster.json \
+	  --output-dir $(PPO_RATING_DIR)/ratings \
+	  --games-per-pair $(PPO_RATING_GAMES) \
+	  --workers $(PPO_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(PPO_RATING_DIR)/ratings/games.jsonl
 
 $(ARENA):
 	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
