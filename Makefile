@@ -25,6 +25,15 @@ TRANSFORMER_WORKERS ?= 1
 TRANSFORMER_EPOCHS ?= 5
 TRANSFORMER_BATCH_SIZE ?= 256
 TRANSFORMER_DEVICE ?= cpu
+PPO_DIR ?= outputs/mega_lucario/ppo_training
+PPO_CYCLES ?= 1
+PPO_GAMES ?= 5000
+PPO_WORKERS ?= 2
+PPO_DEVICE ?= cpu
+PPO_BATCH_SIZE ?= 1024
+PPO_MICRO_BATCH_SIZE ?= 128
+PPO_UPDATES ?= 128
+PPO_TEMPERATURE ?= 1.0
 
 .PHONY: mega-lucario-rule-vs-gbdt-viewer
 # Python版の公式シミュレーターでルールベースのメガルカリオとGBDTを1回対戦させ、
@@ -122,3 +131,24 @@ mega-lucario-transformer-train-run: $(ARENA)
 	$(PYTHON) src/agents/mega_lucario/transformer/scripts/export.py \
 	  --checkpoint $(TRANSFORMER_OUTPUT)/model.pt \
 	  --output $(TRANSFORMER_BIN)
+
+.PHONY: mega-lucario-ppo-train
+# 学習済みTransformerを初期方策として、C++ arenaのon-policy rolloutからPPOで改善し、
+# cycleごとにmodel.pt/model.binをexportしてnative validationまで行う。
+# 例 make mega-lucario-ppo-train PPO_GAMES=1000 PPO_WORKERS=2 PPO_DEVICE=cpu
+mega-lucario-ppo-train: $(ARENA)
+	rm -rf $(PPO_DIR)
+	mkdir -p $(PPO_DIR)
+	/usr/bin/time -p $(PYTHON) src/agents/mega_lucario/ppo/scripts/run_cycle.py \
+	  --checkpoint $(TRANSFORMER_CHECKPOINT) \
+	  --output-dir $(PPO_DIR) \
+	  --gbdt-model $(MODEL) \
+	  --binary $(ARENA) \
+	  --cycles $(PPO_CYCLES) \
+	  --games $(PPO_GAMES) \
+	  --workers $(PPO_WORKERS) \
+	  --temperature $(PPO_TEMPERATURE) \
+	  --device $(PPO_DEVICE) \
+	  --batch-size $(PPO_BATCH_SIZE) \
+	  --micro-batch-size $(PPO_MICRO_BATCH_SIZE) \
+	  --updates $(PPO_UPDATES)
