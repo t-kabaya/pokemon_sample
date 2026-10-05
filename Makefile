@@ -10,6 +10,9 @@ TRANSFORMER_VIEW_JSON ?= $(TRANSFORMER_VIEW_DIR)/game-0.viewer.json
 RATING_DIR ?= outputs/mega_lucario/rule_vs_gbdt_rating
 RATING_GAMES ?= 100
 RATING_WORKERS ?= 2
+TRANSFORMER_RATING_DIR ?= outputs/mega_lucario/rule_vs_transformer_rating
+TRANSFORMER_RATING_GAMES ?= 100
+TRANSFORMER_RATING_WORKERS ?= 2
 TRANSFORMER_DIR ?= outputs/mega_lucario/transformer_training
 TRANSFORMER_REPLAYS ?= $(TRANSFORMER_DIR)/gbdt_replays
 TRANSFORMER_FEATURES ?= $(TRANSFORMER_DIR)/distillation
@@ -66,6 +69,25 @@ mega-lucario-rule-vs-gbdt-rating: $(ARENA)
 	  --output-dir $(RATING_DIR)/ratings \
 	  --games-per-pair $(RATING_GAMES) \
 	  --workers $(RATING_WORKERS)
+
+.PHONY: mega-lucario-rule-vs-transformer-rating
+# C++ arenaでルールベースのメガルカリオとTransformerを席交換込みで100戦させ、勝率とratingを計測する。
+# 結果は $(TRANSFORMER_RATING_DIR)/ratings/ に出力される（games.jsonl, ratings.json, ratings.csv）。
+mega-lucario-rule-vs-transformer-rating: $(ARENA)
+	rm -rf $(TRANSFORMER_RATING_DIR)
+	mkdir -p $(TRANSFORMER_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "rule": {"agent": "mega_lucario"},' \
+	  '  "transformer": {"agent": "mega_lucario_transformer", "model": "$(abspath $(TRANSFORMER_BIN))"}' \
+	  '}' > $(TRANSFORMER_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(TRANSFORMER_RATING_DIR)/roster.json \
+	  --output-dir $(TRANSFORMER_RATING_DIR)/ratings \
+	  --games-per-pair $(TRANSFORMER_RATING_GAMES) \
+	  --workers $(TRANSFORMER_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(TRANSFORMER_RATING_DIR)/ratings/games.jsonl
 
 $(ARENA):
 	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
