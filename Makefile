@@ -8,6 +8,9 @@ VIEW_JSON ?= $(VIEW_DIR)/game-0.viewer.json
 TRANSFORMER_VIEW_DIR ?= outputs/mega_lucario/rule_vs_transformer_viewer
 TRANSFORMER_VIEW_HTML ?= $(TRANSFORMER_VIEW_DIR)/game-0.html
 TRANSFORMER_VIEW_JSON ?= $(TRANSFORMER_VIEW_DIR)/game-0.viewer.json
+PPO_VIEW_DIR ?= outputs/mega_lucario/rule_vs_ppo_viewer
+PPO_VIEW_HTML ?= $(PPO_VIEW_DIR)/game-0.html
+PPO_VIEW_JSON ?= $(PPO_VIEW_DIR)/game-0.viewer.json
 RATING_DIR ?= outputs/mega_lucario/rule_vs_gbdt_rating
 RATING_GAMES ?= 100
 RATING_WORKERS ?= 2
@@ -46,6 +49,7 @@ HF_MODEL_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-models
 HF_DATASET_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-runs
 HF_REPO_VISIBILITY ?= --private
 HF_ARTIFACT_DIR ?= artifacts/hf
+HF_PPO_DOWNLOAD_DIR ?= $(HF_ARTIFACT_DIR)/ppo-download
 HF_TRANSFORMER_MODEL_DIR ?= mega_lucario/transformer
 HF_GBDT_MODEL_DIR ?= mega_lucario/gbdt
 HF_PPO_MODEL_DIR ?= mega_lucario/ppo
@@ -103,6 +107,16 @@ hf-upload-ppo-weights:
 	uv run hf upload $(HF_MODEL_REPO) $(PPO_CHECKPOINT) $(HF_PPO_MODEL_DIR)/model.pt --repo-type model --commit-message "Upload PPO checkpoint"
 	uv run hf upload $(HF_MODEL_REPO) $(PPO_BIN) $(HF_PPO_MODEL_DIR)/model.bin --repo-type model --commit-message "Upload PPO C++ weights"
 
+.PHONY: hf-install-ppo-weights
+# Hugging FaceからPPOのmodel.pt/model.binを取得し、$(PPO_DIR)配下へ配置する。
+hf-install-ppo-weights:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	rm -rf $(HF_PPO_DOWNLOAD_DIR)
+	mkdir -p $(HF_PPO_DOWNLOAD_DIR) $(dir $(PPO_CHECKPOINT))
+	uv run hf download $(HF_MODEL_REPO) $(HF_PPO_MODEL_DIR)/model.pt $(HF_PPO_MODEL_DIR)/model.bin --repo-type model --local-dir $(HF_PPO_DOWNLOAD_DIR)
+	cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/model.pt $(PPO_CHECKPOINT)
+	cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/model.bin $(PPO_BIN)
+
 .PHONY: hf-upload-training-weights
 # Transformerのmodel.pt/model.binとGBDTのmodel.gbdtだけをHugging Faceへアップロードする。
 hf-upload-training-weights: hf-upload-transformer-weights hf-upload-gbdt-weights
@@ -154,6 +168,25 @@ mega-lucario-rule-vs-transformer-viewer:
 	  --output-json $(TRANSFORMER_VIEW_JSON) \
 	  --output-html $(TRANSFORMER_VIEW_HTML)
 	$(PYTHON) -m webbrowser file://$(abspath $(TRANSFORMER_VIEW_HTML))
+
+.PHONY: mega-lucario-rule-vs-ppo-viewer
+# Python版の公式シミュレーターでルールベースのメガルカリオとPPO後Transformerを1回対戦させ、
+# Player0をルールベース、Player1をPPO後Transformerとして実行し、
+# 可視化上ではPlayer0がルールベース、Player1がPPO。
+# 公式ビューアへ自動送信するHTMLリプレイを生成する。
+mega-lucario-rule-vs-ppo-viewer:
+	rm -rf $(PPO_VIEW_DIR)
+	mkdir -p $(PPO_VIEW_DIR)
+	$(PYTHON) src/tools/run_mega_lucario_transformer_viewer.py \
+	  --checkpoint $(PPO_CHECKPOINT) \
+	  --device $(PPO_DEVICE) \
+	  --output-json $(PPO_VIEW_JSON) \
+	  --output-html $(PPO_VIEW_HTML)
+	$(PYTHON) -m webbrowser file://$(abspath $(PPO_VIEW_HTML))
+
+.PHONY: mega-lucario-rule-vs-uploaded-ppo-viewer
+# Hugging FaceからPPO重みを取得してから、ルールベースのメガルカリオとPPOを1回対戦・可視化する。
+mega-lucario-rule-vs-uploaded-ppo-viewer: hf-install-ppo-weights mega-lucario-rule-vs-ppo-viewer
 
 # -----------------------------------------------------------------------------
 # Rating tasks
@@ -215,6 +248,10 @@ mega-lucario-rule-vs-ppo-rating: $(ARENA)
 	  --games-per-pair $(PPO_RATING_GAMES) \
 	  --workers $(PPO_RATING_WORKERS)
 	$(PYTHON) src/tools/summarize_match_results.py $(PPO_RATING_DIR)/ratings/games.jsonl
+
+.PHONY: mega-lucario-rule-vs-uploaded-ppo-rating
+# Hugging FaceからPPO重みを取得してから、ルールベースのメガルカリオとPPOを対戦させる。
+mega-lucario-rule-vs-uploaded-ppo-rating: hf-install-ppo-weights mega-lucario-rule-vs-ppo-rating
 
 # -----------------------------------------------------------------------------
 # Train tasks
