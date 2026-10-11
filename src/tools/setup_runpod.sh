@@ -159,14 +159,21 @@ cp "$hf_tmp/mega_lucario/ppo/model.bin" \
 
 if [[ "$skip_assets" -eq 0 ]]; then
   if [[ "$skip_kaggle_check" -eq 0 ]]; then
-    if [[ ! -f "$HOME/.kaggle/kaggle.json" ]] && {
+    if [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
+      chmod 600 "$HOME/.kaggle/kaggle.json"
+      log "Kaggle API token file is available"
+    elif [[ -f "$HOME/.kaggle/credentials.json" ]]; then
+      chmod 600 "$HOME/.kaggle/credentials.json"
+      log "Kaggle OAuth credentials are available"
+    elif {
       [[ -z "${KAGGLE_USERNAME:-}" ]] || [[ -z "${KAGGLE_KEY:-}" ]]
     }; then
       log "Kaggle authentication is not configured; starting interactive login"
-      uv run kaggle auth login
-    fi
-    if [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
-      chmod 600 "$HOME/.kaggle/kaggle.json"
+      if ! uv run kaggle auth login; then
+        uv run kaggle auth print-access-token >/dev/null || die "Kaggle authentication failed."
+      fi
+    else
+      log "Kaggle environment credentials are available"
     fi
   fi
   log "Downloading official assets"
