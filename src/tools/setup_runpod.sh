@@ -21,7 +21,8 @@ Environment:
 
 Kaggle credentials:
   Put kaggle.json at ~/.kaggle/kaggle.json, or provide KAGGLE_USERNAME and
-  KAGGLE_KEY in the environment. The script never creates credentials.
+  KAGGLE_KEY in the environment. If credentials are missing, the script starts
+  "uv run kaggle auth login" so you can complete OAuth in a browser.
 EOF
 }
 
@@ -152,7 +153,8 @@ if [[ "$skip_assets" -eq 0 ]]; then
     if [[ ! -f "$HOME/.kaggle/kaggle.json" ]] && {
       [[ -z "${KAGGLE_USERNAME:-}" ]] || [[ -z "${KAGGLE_KEY:-}" ]]
     }; then
-      die "Kaggle credentials not found. Add ~/.kaggle/kaggle.json or set KAGGLE_USERNAME and KAGGLE_KEY."
+      log "Kaggle authentication is not configured; starting interactive login"
+      uv run kaggle auth login
     fi
     if [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
       chmod 600 "$HOME/.kaggle/kaggle.json"
