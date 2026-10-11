@@ -9,6 +9,7 @@ build/
 external/
 outputs/
 models/
+artifacts/
 
 # Checkpoints and model exports may also use a custom output directory
 *.pt

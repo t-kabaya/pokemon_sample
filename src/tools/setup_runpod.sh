@@ -10,7 +10,6 @@ Set up this repository on a fresh RunPod Linux instance.
 Options:
   --skip-apt              Do not install system packages with apt-get.
   --skip-assets           Do not download Kaggle official assets or the C++ engine.
-  --skip-build            Do not build the C++ arena.
   --skip-kaggle-check     Do not require Kaggle credentials before asset download.
   -h, --help              Show this help.
 
@@ -36,7 +35,6 @@ die() {
 
 skip_apt=0
 skip_assets=0
-skip_build=0
 skip_kaggle_check=0
 
 while (($#)); do
@@ -46,9 +44,6 @@ while (($#)); do
       ;;
     --skip-assets)
       skip_assets=1
-      ;;
-    --skip-build)
-      skip_build=1
       ;;
     --skip-kaggle-check)
       skip_kaggle_check=1
@@ -140,9 +135,7 @@ if [[ "$skip_assets" -eq 0 ]]; then
   uv run python src/tools/fetch_cg_engine.py
 fi
 
-if [[ "$skip_build" -eq 0 ]]; then
-  log "Building C++ arena"
-  uv run python src/tools/build_cpp_engine.py
-fi
+log "Building C++ arena"
+uv run python src/tools/build_cpp_engine.py
 
 log "RunPod setup complete"

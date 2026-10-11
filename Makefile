@@ -39,6 +39,13 @@ PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
 RUNPOD_SETUP_ARGS ?=
+HF_NAMESPACE ?= kaba777
+HF_MODEL_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-models
+HF_DATASET_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-runs
+HF_REPO_VISIBILITY ?= --private
+HF_ARTIFACT_DIR ?= artifacts/hf
+HF_TRANSFORMER_MODEL_DIR ?= mega_lucario/transformer
+HF_GBDT_MODEL_DIR ?= mega_lucario/gbdt
 
 # -----------------------------------------------------------------------------
 # Setup tasks
@@ -48,8 +55,7 @@ RUNPOD_SETUP_ARGS ?=
 # RunPodの新規Podでuv環境、Kaggle資産、C++ arenaの初期セットアップを行う。
 # 初回は make runpod-setup をそのまま実行する。
 # 永続Volumeなどで外部資産が取得済みなら RUNPOD_SETUP_ARGS="--skip-assets" を指定する。
-# build/arena_cpp がビルド済みなら RUNPOD_SETUP_ARGS="--skip-build" を指定する。
-# 依存環境とCUDA確認だけ行う場合は RUNPOD_SETUP_ARGS="--skip-assets --skip-build" を指定する。
+# C++ arenaは毎回ビルドする。
 runpod-setup:
 	bash src/tools/setup_runpod.sh $(RUNPOD_SETUP_ARGS)
 
@@ -60,6 +66,45 @@ hf-login:
 
 $(ARENA):
 	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
+
+# -----------------------------------------------------------------------------
+# Upload tasks
+# -----------------------------------------------------------------------------
+
+.PHONY: hf-create-repos
+# Hugging Face上にモデル保存用repoを作成する。
+# 例 make hf-create-repos HF_NAMESPACE=<user-or-org>
+# 公開repoにする場合は HF_REPO_VISIBILITY=--public を指定する。
+hf-create-repos:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	uv run hf repos create $(HF_MODEL_REPO) --repo-type model $(HF_REPO_VISIBILITY) --exist-ok
+
+.PHONY: hf-upload-transformer-weights
+# Transformerで作成したモデル重みだけをHugging Faceへアップロードする。
+hf-upload-transformer-weights:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	uv run hf upload $(HF_MODEL_REPO) $(TRANSFORMER_CHECKPOINT) $(HF_TRANSFORMER_MODEL_DIR)/model.pt --repo-type model --commit-message "Upload Transformer checkpoint"
+	uv run hf upload $(HF_MODEL_REPO) $(TRANSFORMER_BIN) $(HF_TRANSFORMER_MODEL_DIR)/model.bin --repo-type model --commit-message "Upload Transformer C++ weights"
+
+.PHONY: hf-upload-gbdt-weights
+# GBDTで作成したモデル重みをHugging Faceへアップロードする。
+hf-upload-gbdt-weights:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	uv run hf upload $(HF_MODEL_REPO) $(MODEL) $(HF_GBDT_MODEL_DIR)/model.gbdt --repo-type model --commit-message "Upload GBDT weights"
+
+.PHONY: hf-upload-artifacts
+# TransformerとGBDTのモデル重みをHugging Faceへアップロードする。
+hf-upload-artifacts: hf-upload-transformer-weights hf-upload-gbdt-weights
+
+.PHONY: hf-clean-raw-uploads
+# 過去に丸ごとアップロードしたoutputs/やmodels/配下をHugging Faceから削除する。
+hf-clean-raw-uploads:
+	uv run python src/tools/delete_hf_paths.py $(HF_MODEL_REPO) models/ --repo-type model --commit-message "Delete raw model upload"
+	uv run python src/tools/delete_hf_paths.py $(HF_DATASET_REPO) outputs/ --repo-type dataset --commit-message "Delete raw output upload"
+
+.PHONY: hf-save-artifacts
+# Hugging Face repoを作成し、TransformerとGBDTのモデル重みをアップロードする。
+hf-save-artifacts: hf-create-repos hf-upload-artifacts
 
 # -----------------------------------------------------------------------------
 # Viewer tasks
