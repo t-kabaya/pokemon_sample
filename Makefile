@@ -40,6 +40,10 @@ PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
 RUNPOD_SETUP_ARGS ?=
 
+# -----------------------------------------------------------------------------
+# Setup tasks
+# -----------------------------------------------------------------------------
+
 .PHONY: runpod-setup
 # RunPodの新規Podでuv環境、Kaggle資産、C++ arenaの初期セットアップを行う。
 # 初回は make runpod-setup をそのまま実行する。
@@ -48,6 +52,13 @@ RUNPOD_SETUP_ARGS ?=
 # 依存環境とCUDA確認だけ行う場合は RUNPOD_SETUP_ARGS="--skip-assets --skip-build" を指定する。
 runpod-setup:
 	bash src/tools/setup_runpod.sh $(RUNPOD_SETUP_ARGS)
+
+$(ARENA):
+	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
+
+# -----------------------------------------------------------------------------
+# Viewer tasks
+# -----------------------------------------------------------------------------
 
 .PHONY: mega-lucario-rule-vs-gbdt-viewer
 # Python版の公式シミュレーターでルールベースのメガルカリオとGBDTを1回対戦させ、
@@ -74,6 +85,10 @@ mega-lucario-rule-vs-transformer-viewer:
 	  --output-json $(TRANSFORMER_VIEW_JSON) \
 	  --output-html $(TRANSFORMER_VIEW_HTML)
 	$(PYTHON) -m webbrowser file://$(abspath $(TRANSFORMER_VIEW_HTML))
+
+# -----------------------------------------------------------------------------
+# Rating tasks
+# -----------------------------------------------------------------------------
 
 .PHONY: mega-lucario-rule-vs-gbdt-rating
 # C++ arenaでルールベースのメガルカリオとGBDTを席交換込みで対戦させ、勝敗とratingを計測する。
@@ -132,8 +147,9 @@ mega-lucario-rule-vs-ppo-rating: $(ARENA)
 	  --workers $(PPO_RATING_WORKERS)
 	$(PYTHON) src/tools/summarize_match_results.py $(PPO_RATING_DIR)/ratings/games.jsonl
 
-$(ARENA):
-	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
+# -----------------------------------------------------------------------------
+# Train tasks
+# -----------------------------------------------------------------------------
 
 .PHONY: mega-lucario-transformer-train mega-lucario-transformer-train-run
 # GBDTをteacherとして対戦リプレイを収集し、Transformerの蒸留データ抽出・学習・C++用exportまで行う。
