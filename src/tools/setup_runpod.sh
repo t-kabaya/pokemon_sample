@@ -17,6 +17,7 @@ Environment:
   UV_SYNC_ARGS            Extra arguments appended to "uv sync --locked --dev".
   CXX                     C++ compiler used by build_cpp_engine.py, default is g++.
   HF_TOKEN                Optional Hugging Face token used by the hf CLI.
+  HF_MODEL_REPO           Hugging Face model repo, default kaba777/ptcg-mega-lucario-models.
 
 Kaggle credentials:
   Put kaggle.json at ~/.kaggle/kaggle.json, or provide KAGGLE_USERNAME and
@@ -112,11 +113,34 @@ uv run python -c "import torch; print('torch', torch.__version__, 'cuda', torch.
 
 log "Checking Hugging Face CLI"
 uv run hf --version
+hf_authenticated=0
 if uv run hf auth whoami; then
+  hf_authenticated=1
   log "Hugging Face authentication is available"
 else
-  printf 'warning: Hugging Face authentication is not configured. Run `uv run hf auth login` or set HF_TOKEN before uploading artifacts.\n' >&2
+  printf 'warning: Hugging Face authentication is not configured. Run `uv run hf auth login` or set HF_TOKEN before downloading or uploading weights.\n' >&2
 fi
+
+if [[ "$hf_authenticated" -eq 0 ]]; then
+  die "Hugging Face authentication is required to download weights. Run uv run hf auth login or set HF_TOKEN."
+fi
+hf_model_repo="${HF_MODEL_REPO:-kaba777/ptcg-mega-lucario-models}"
+hf_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ptcg-hf-weights.XXXXXX")"
+trap 'rm -rf "$hf_tmp"' EXIT
+log "Downloading Transformer and GBDT weights from ${hf_model_repo}"
+uv run hf download "$hf_model_repo" \
+  mega_lucario/transformer/model.pt \
+  mega_lucario/transformer/model.bin \
+  mega_lucario/gbdt/model.gbdt \
+  --repo-type model \
+  --local-dir "$hf_tmp"
+mkdir -p outputs/mega_lucario/transformer_training/model models/mega_lucario
+cp "$hf_tmp/mega_lucario/transformer/model.pt" \
+  outputs/mega_lucario/transformer_training/model/model.pt
+cp "$hf_tmp/mega_lucario/transformer/model.bin" \
+  outputs/mega_lucario/transformer_training/model/model.bin
+cp "$hf_tmp/mega_lucario/gbdt/model.gbdt" \
+  models/mega_lucario/model.gbdt
 
 if [[ "$skip_assets" -eq 0 ]]; then
   if [[ "$skip_kaggle_check" -eq 0 ]]; then

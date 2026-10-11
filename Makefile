@@ -53,6 +53,7 @@ HF_GBDT_MODEL_DIR ?= mega_lucario/gbdt
 
 .PHONY: runpod-setup
 # RunPodの新規Podでuv環境、Kaggle資産、C++ arenaの初期セットアップを行う。
+# Hugging FaceからTransformer model.pt/model.binとGBDT model.gbdtを取得し、PPO学習の入力を用意する。
 # 初回は make runpod-setup をそのまま実行する。
 # 永続Volumeなどで外部資産が取得済みなら RUNPOD_SETUP_ARGS="--skip-assets" を指定する。
 # C++ arenaは毎回ビルドする。
@@ -92,9 +93,13 @@ hf-upload-gbdt-weights:
 	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
 	uv run hf upload $(HF_MODEL_REPO) $(MODEL) $(HF_GBDT_MODEL_DIR)/model.gbdt --repo-type model --commit-message "Upload GBDT weights"
 
+.PHONY: hf-upload-training-weights
+# Transformerのmodel.pt/model.binとGBDTのmodel.gbdtだけをHugging Faceへアップロードする。
+hf-upload-training-weights: hf-upload-transformer-weights hf-upload-gbdt-weights
+
 .PHONY: hf-upload-artifacts
-# TransformerとGBDTのモデル重みをHugging Faceへアップロードする。
-hf-upload-artifacts: hf-upload-transformer-weights hf-upload-gbdt-weights
+# 互換用alias。保存対象はTransformerとGBDTのモデル重み3ファイルのみ。
+hf-upload-artifacts: hf-upload-training-weights
 
 .PHONY: hf-clean-raw-uploads
 # 過去に丸ごとアップロードしたoutputs/やmodels/配下をHugging Faceから削除する。
@@ -102,9 +107,13 @@ hf-clean-raw-uploads:
 	uv run python src/tools/delete_hf_paths.py $(HF_MODEL_REPO) models/ --repo-type model --commit-message "Delete raw model upload"
 	uv run python src/tools/delete_hf_paths.py $(HF_DATASET_REPO) outputs/ --repo-type dataset --commit-message "Delete raw output upload"
 
+.PHONY: hf-save-training-weights
+# Hugging Face repoを作成し、TransformerとGBDTのモデル重み3ファイルだけをアップロードする。
+hf-save-training-weights: hf-create-repos hf-upload-training-weights
+
 .PHONY: hf-save-artifacts
-# Hugging Face repoを作成し、TransformerとGBDTのモデル重みをアップロードする。
-hf-save-artifacts: hf-create-repos hf-upload-artifacts
+# 互換用alias。保存対象はTransformerとGBDTのモデル重み3ファイルのみ。
+hf-save-artifacts: hf-save-training-weights
 
 # -----------------------------------------------------------------------------
 # Viewer tasks
