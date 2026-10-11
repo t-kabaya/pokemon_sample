@@ -1,4 +1,5 @@
 PYTHON ?= .venv/bin/python
+TIME ?= time -p
 ARENA ?= build/arena_cpp
 MODEL ?= models/mega_lucario/model.gbdt
 VIEW_DIR ?= outputs/mega_lucario/rule_vs_gbdt_viewer
@@ -214,7 +215,7 @@ mega-lucario-rule-vs-ppo-rating: $(ARENA)
 # GBDTをteacherとして対戦リプレイを収集し、Transformerの蒸留データ抽出・学習・C++用exportまで行う。
 # 結果は $(TRANSFORMER_DIR)/ に出力される（gbdt_replays/, distillation/, model/model.pt, model/model.bin）。
 mega-lucario-transformer-train:
-	/usr/bin/time -p $(MAKE) mega-lucario-transformer-train-run
+	$(TIME) $(MAKE) mega-lucario-transformer-train-run
 
 mega-lucario-transformer-train-run: $(ARENA)
 	rm -rf $(TRANSFORMER_DIR)
@@ -248,7 +249,7 @@ mega-lucario-transformer-train-run: $(ARENA)
 mega-lucario-ppo-train: $(ARENA)
 	rm -rf $(PPO_DIR)
 	mkdir -p $(PPO_DIR)
-	/usr/bin/time -p $(PYTHON) src/agents/mega_lucario/ppo/scripts/run_cycle.py \
+	$(TIME) $(PYTHON) src/agents/mega_lucario/ppo/scripts/run_cycle.py \
 	  --checkpoint $(TRANSFORMER_CHECKPOINT) \
 	  --output-dir $(PPO_DIR) \
 	  --gbdt-model $(MODEL) \
