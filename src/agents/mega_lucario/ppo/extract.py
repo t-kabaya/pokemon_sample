@@ -35,7 +35,10 @@ def extract(
     seen = set()
     seeded = set()
     zero_queries = 0
-    for path in sorted(replay_dir.rglob("game-*.jsonl")):
+    paths = sorted(replay_dir.rglob("game-*.jsonl"))
+    total_paths = len(paths)
+    print(f"PPO rollout extraction: reading {total_paths} replay files", flush=True)
+    for index, path in enumerate(paths, start=1):
         header, terminal = inspect_replay(path)
         digest = sha256(path)
         key = (header.get("seed"), tuple(header["agents"]))
@@ -119,8 +122,16 @@ def extract(
             episodes.append(
                 dict(game=digest, seat=seat, begin=begin, end=len(metadata), reward=reward)
             )
+        if index == total_paths or index % 50 == 0:
+            percent = 100 * index / total_paths
+            print(
+                f"PPO rollout extraction progress: {index}/{total_paths} files "
+                f"({percent:.1f}%), decisions={len(metadata)}, queries={len(sizes)}",
+                flush=True,
+            )
     if not matrices:
         raise ValueError("No PPO trajectories")
+    print("PPO rollout extraction: building arrays", flush=True)
     data = dict(
         x=np.concatenate(matrices),
         sizes=np.asarray(sizes, dtype=np.int32),
@@ -134,7 +145,9 @@ def extract(
             dtype=bool if key == "done" else np.int64 if key in ("episode", "step") else np.float64,
         )
     output.mkdir(parents=True, exist_ok=True)
+    print("PPO rollout extraction: writing compressed rollout.npz", flush=True)
     np.savez_compressed(output / "rollout.npz", **data)
+    print("PPO rollout extraction: writing decisions.json", flush=True)
     (output / "decisions.json").write_text(json.dumps(metadata, separators=(",", ":")) + "\n")
     report = dict(
         format="ptcg-ppo-rollout-v1",
