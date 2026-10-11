@@ -133,20 +133,29 @@ fi
 hf_model_repo="${HF_MODEL_REPO:-kaba777/ptcg-mega-lucario-models}"
 hf_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ptcg-hf-weights.XXXXXX")"
 trap 'rm -rf "$hf_tmp"' EXIT
-log "Downloading Transformer and GBDT weights from ${hf_model_repo}"
+log "Downloading Transformer, GBDT, and PPO weights from ${hf_model_repo}"
 uv run hf download "$hf_model_repo" \
   mega_lucario/transformer/model.pt \
   mega_lucario/transformer/model.bin \
   mega_lucario/gbdt/model.gbdt \
+  mega_lucario/ppo/model.pt \
+  mega_lucario/ppo/model.bin \
   --repo-type model \
   --local-dir "$hf_tmp"
-mkdir -p outputs/mega_lucario/transformer_training/model models/mega_lucario
+mkdir -p \
+  outputs/mega_lucario/transformer_training/model \
+  outputs/mega_lucario/ppo_training/cycle-000/models \
+  models/mega_lucario
 cp "$hf_tmp/mega_lucario/transformer/model.pt" \
   outputs/mega_lucario/transformer_training/model/model.pt
 cp "$hf_tmp/mega_lucario/transformer/model.bin" \
   outputs/mega_lucario/transformer_training/model/model.bin
 cp "$hf_tmp/mega_lucario/gbdt/model.gbdt" \
   models/mega_lucario/model.gbdt
+cp "$hf_tmp/mega_lucario/ppo/model.pt" \
+  outputs/mega_lucario/ppo_training/cycle-000/models/model.pt
+cp "$hf_tmp/mega_lucario/ppo/model.bin" \
+  outputs/mega_lucario/ppo_training/cycle-000/models/model.bin
 
 if [[ "$skip_assets" -eq 0 ]]; then
   if [[ "$skip_kaggle_check" -eq 0 ]]; then
