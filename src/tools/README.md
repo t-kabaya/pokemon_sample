@@ -7,6 +7,7 @@ See the [root README](../../README.md) for environment setup and agent layout.
 | `fetch_official_assets.py` | Download the Python cg API and optional notebooks; verify bundled decks |
 | `fetch_cg_engine.py` | Download, extract, and verify the unmodified C++ engine |
 | `build_cpp_engine.py` | Build four schemas, the arena, and each deck's GBDT/Transformer probes |
+| `setup_runpod.sh` | Set up uv, Python dependencies, Kaggle assets, and the C++ arena on RunPod |
 | `validate_cpp_agents.py` | Compare C++ observations/actions with Python; add `--notebook-root` to compare original notebooks |
 | `rating_arena.py` | Collect and resume matches for a fixed pool, then save ratings |
 | `rating.py` | Bayesian Bradley–Terry estimation |

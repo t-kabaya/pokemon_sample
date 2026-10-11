@@ -38,6 +38,12 @@ PPO_MICRO_BATCH_SIZE ?= 128
 PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
+RUNPOD_SETUP_ARGS ?=
+
+.PHONY: runpod-setup
+# RunPodの新規Podでuv環境、Kaggle資産、C++ arenaの初期セットアップを行う。
+runpod-setup:
+	bash src/tools/setup_runpod.sh $(RUNPOD_SETUP_ARGS)
 
 .PHONY: mega-lucario-rule-vs-gbdt-viewer
 # Python版の公式シミュレーターでルールベースのメガルカリオとGBDTを1回対戦させ、
