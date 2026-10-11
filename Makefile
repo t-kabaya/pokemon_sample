@@ -42,6 +42,10 @@ RUNPOD_SETUP_ARGS ?=
 
 .PHONY: runpod-setup
 # RunPodの新規Podでuv環境、Kaggle資産、C++ arenaの初期セットアップを行う。
+# 初回は make runpod-setup をそのまま実行する。
+# 永続Volumeなどで外部資産が取得済みなら RUNPOD_SETUP_ARGS="--skip-assets" を指定する。
+# build/arena_cpp がビルド済みなら RUNPOD_SETUP_ARGS="--skip-build" を指定する。
+# 依存環境とCUDA確認だけ行う場合は RUNPOD_SETUP_ARGS="--skip-assets --skip-build" を指定する。
 runpod-setup:
 	bash src/tools/setup_runpod.sh $(RUNPOD_SETUP_ARGS)
 
