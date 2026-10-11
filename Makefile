@@ -37,6 +37,9 @@ TRANSFORMER_BATCH_SIZE ?= 256
 TRANSFORMER_DEVICE ?= cpu
 PPO_DIR ?= outputs/mega_lucario/ppo_training
 PPO_CYCLES ?= 1
+PPO_BASE_CYCLE ?= 0
+PPO_BASE_CYCLE_ID ?= $(shell printf "%03d" $(PPO_BASE_CYCLE))
+PPO_NEXT_CYCLE ?= $(shell expr $(PPO_BASE_CYCLE) + 1)
 PPO_GAMES ?= 5000
 PPO_WORKERS ?= 2
 PPO_EXTRACT_WORKERS ?= 32
@@ -47,6 +50,7 @@ PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
 PPO_CHECKPOINT ?= $(PPO_DIR)/cycle-000/models/model.pt
+PPO_BASE_CHECKPOINT ?= $(PPO_DIR)/cycle-$(PPO_BASE_CYCLE_ID)/models/model.pt
 RUNPOD_SETUP_ARGS ?=
 HF_NAMESPACE ?= kaba777
 HF_MODEL_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-models
@@ -322,6 +326,28 @@ mega-lucario-ppo-train: $(ARENA)
 	$(TIME) $(PYTHON) src/agents/mega_lucario/ppo/scripts/run_cycle.py \
 	  --checkpoint $(TRANSFORMER_CHECKPOINT) \
 	  --output-dir $(PPO_DIR) \
+	  --gbdt-model $(MODEL) \
+	  --binary $(ARENA) \
+	  --cycles $(PPO_CYCLES) \
+	  --games $(PPO_GAMES) \
+	  --workers $(PPO_WORKERS) \
+	  --extract-workers $(PPO_EXTRACT_WORKERS) \
+	  --temperature $(PPO_TEMPERATURE) \
+	  --device $(PPO_DEVICE) \
+	  --batch-size $(PPO_BATCH_SIZE) \
+	  --micro-batch-size $(PPO_MICRO_BATCH_SIZE) \
+	  --updates $(PPO_UPDATES)
+
+.PHONY: mega-lucario-ppo-train-next-cycle
+# 既存のPPO cycleを初期方策として、次のcycleを$(PPO_DIR)へ追加する。
+# 例 make mega-lucario-ppo-train-next-cycle PPO_BASE_CYCLE=0  # cycle-000 -> cycle-001
+mega-lucario-ppo-train-next-cycle: $(ARENA)
+	test -f $(PPO_BASE_CHECKPOINT) || (echo "Missing PPO_BASE_CHECKPOINT=$(PPO_BASE_CHECKPOINT)" >&2; exit 1)
+	mkdir -p $(PPO_DIR)
+	$(TIME) $(PYTHON) src/agents/mega_lucario/ppo/scripts/run_cycle.py \
+	  --checkpoint $(PPO_BASE_CHECKPOINT) \
+	  --output-dir $(PPO_DIR) \
+	  --start-cycle $(PPO_NEXT_CYCLE) \
 	  --gbdt-model $(MODEL) \
 	  --binary $(ARENA) \
 	  --cycles $(PPO_CYCLES) \

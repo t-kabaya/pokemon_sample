@@ -38,6 +38,7 @@ def main() -> None:
     )
     p.add_argument("--binary", type=Path, default=ROOT / "build/arena_cpp")
     p.add_argument("--cycles", type=int, default=1)
+    p.add_argument("--start-cycle", type=int, default=0)
     p.add_argument("--games-per-opponent", type=int)
     p.add_argument("--games", type=int, default=DEFAULTS["games_per_cycle"])
     p.add_argument("--opponent-config", type=Path)
@@ -52,15 +53,25 @@ def main() -> None:
     a = p.parse_args()
     if a.cycles < 1:
         p.error("cycles must be positive")
-    if a.output_dir.exists() and any(a.output_dir.iterdir()):
+    if a.start_cycle < 0:
+        p.error("start-cycle must be nonnegative")
+    if a.start_cycle == 0 and a.output_dir.exists() and any(a.output_dir.iterdir()):
         p.error("output-dir must be empty")
-    current = initialize(a.checkpoint, a.output_dir / "initial.pt")
-    reports = []
+    for cycle in range(a.start_cycle, a.start_cycle + a.cycles):
+        output = a.output_dir / f"cycle-{cycle:03d}"
+        if output.exists() and any(output.iterdir()):
+            p.error(f"{output} must be empty")
+    a.output_dir.mkdir(parents=True, exist_ok=True)
+    initial = a.output_dir / ("initial.pt" if a.start_cycle == 0 else f"initial-{a.start_cycle:03d}.pt")
+    current = initialize(a.checkpoint, initial)
+    cycles_path = a.output_dir / "cycles.json"
+    reports = json.loads(cycles_path.read_text()) if a.start_cycle > 0 and cycles_path.exists() else []
     games = len(a.opponents) * a.games_per_opponent if a.games_per_opponent is not None else a.games
     roster = json.loads(a.opponent_config.read_text()) if a.opponent_config else {}
-    for cycle in range(a.cycles):
+    for cycle in range(a.start_cycle, a.start_cycle + a.cycles):
         output = a.output_dir / f"cycle-{cycle:03d}"
-        print(f"PPO cycle {cycle + 1}/{a.cycles}: rollout collection start", flush=True)
+        cycle_number = cycle - a.start_cycle + 1
+        print(f"PPO cycle {cycle_number}/{a.cycles}: rollout collection start", flush=True)
         collection = collect(
             current,
             output / "rollout",
@@ -77,7 +88,7 @@ def main() -> None:
             opponent_weights=roster.get("weights"),
             opponent_models=roster.get("models"),
         )
-        print(f"PPO cycle {cycle + 1}/{a.cycles}: training start", flush=True)
+        print(f"PPO cycle {cycle_number}/{a.cycles}: training start", flush=True)
         model, payload = load_checkpoint(current, CONTRACT_ID, DECK_COUNTS, NAMES)
         training = train(
             model,
@@ -88,9 +99,9 @@ def main() -> None:
             training_config(a, a.update_seed + cycle),
         )
         current = output / "models/model.pt"
-        print(f"PPO cycle {cycle + 1}/{a.cycles}: export start", flush=True)
+        print(f"PPO cycle {cycle_number}/{a.cycles}: export start", flush=True)
         export(current, output / "models/model.bin")
-        print(f"PPO cycle {cycle + 1}/{a.cycles}: validation start", flush=True)
+        print(f"PPO cycle {cycle_number}/{a.cycles}: validation start", flush=True)
         validation = validate(
             current, output / "models/model.bin", a.gbdt_model, output / "validation", a.binary
         )
