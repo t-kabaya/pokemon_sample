@@ -1,5 +1,5 @@
 PYTHON ?= .venv/bin/python
-TIME ?= time -p
+TIME ?=
 ARENA ?= build/arena_cpp
 MODEL ?= models/mega_lucario/model.gbdt
 VIEW_DIR ?= outputs/mega_lucario/rule_vs_gbdt_viewer
