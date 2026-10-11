@@ -43,6 +43,7 @@ def main() -> None:
     p.add_argument("--opponent-config", type=Path)
     p.add_argument("--opponents", nargs="+", default=DEFAULTS["opponents"])
     p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--extract-workers", type=int, default=1)
     p.add_argument("--seed", type=int, default=202640000)
     p.add_argument("--sample-seed", type=int, default=202650000)
     p.add_argument("--update-seed", type=int, default=204)
@@ -72,6 +73,7 @@ def main() -> None:
             a.temperature,
             a.workers,
             games=a.games,
+            extract_workers=a.extract_workers,
             opponent_weights=roster.get("weights"),
             opponent_models=roster.get("models"),
         )

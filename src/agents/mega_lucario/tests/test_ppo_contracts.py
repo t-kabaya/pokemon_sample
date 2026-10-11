@@ -18,6 +18,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src/tools"))
+from agents.mega_lucario.ppo.extract import combine_extracted
 from agents.mega_lucario.ppo.rollout import compute_gae, joint_stats
 from agents.mega_lucario.ppo.scripts.initialize import CONTRACT_ID, DECK_COUNTS, NAMES, initialize
 from agents.mega_lucario.ppo.train import clipped_loss, distribution_targets, load_rollout
@@ -28,6 +29,32 @@ from agents.mega_lucario.transformer.model import ARCHITECTURE, ObservationTrans
 
 class PpoContracts(unittest.TestCase):
     """Validate ppo contracts."""
+
+    @staticmethod
+    def extracted_fixture(name: str, seed: int, rows: int) -> dict[str, object]:
+        """Return a small per-replay extraction result."""
+        return dict(
+            matrices=[np.full((rows, 3), seed, dtype=np.float32)],
+            sizes=[rows],
+            targets=[rows - 1],
+            decision_offsets=[0, 1],
+            metadata=[dict(game=name, seat=0, step=seed, action=[rows], queries=[])],
+            episodes=[dict(game=name, seat=0, begin=0, end=1, reward=1.0)],
+            game=dict(path=f"{name}.jsonl", sha256=name, seed=seed),
+            scalars=dict(
+                old_logp=[-0.1 * seed],
+                old_value=[0.01 * seed],
+                old_entropy=[0.2],
+                reward=[1.0],
+                done=[True],
+                episode=[0],
+                step=[seed],
+            ),
+            zero_queries=seed,
+            digest=name,
+            seed=seed,
+            agents=("mega_lucario_transformer", "mega_lucario"),
+        )
 
     def test_gae_separates_seats_and_rejects_truncation(self) -> None:
         """Check gae separates seats and rejects truncation."""
@@ -122,6 +149,47 @@ class PpoContracts(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "checkpoint"):
                 load_rollout(p, CONTRACT_ID, "new")
+
+    def test_parallel_extraction_merge_preserves_sequential_contract(self) -> None:
+        """Check per-replay extraction results merge like sequential extraction."""
+        first = self.extracted_fixture("a", 10, 2)
+        second = self.extracted_fixture("b", 20, 3)
+        combined = combine_extracted([first, second])
+        self.assertEqual(combined["decision_offsets"], [0, 1, 2])
+        self.assertEqual(combined["sizes"], [2, 3])
+        self.assertEqual(combined["targets"], [1, 2])
+        self.assertEqual([m["game"] for m in combined["metadata"]], ["a", "b"])
+        self.assertEqual(combined["episodes"][0]["begin"], 0)
+        self.assertEqual(combined["episodes"][0]["end"], 1)
+        self.assertEqual(combined["episodes"][1]["begin"], 1)
+        self.assertEqual(combined["episodes"][1]["end"], 2)
+        self.assertEqual(combined["scalars"]["episode"], [0, 1])
+        self.assertEqual(combined["zero_queries"], 30)
+        np.testing.assert_array_equal(combined["matrices"][0], np.full((2, 3), 10))
+        np.testing.assert_array_equal(combined["matrices"][1], np.full((3, 3), 20))
+
+    def test_extraction_merge_rejects_duplicate_games(self) -> None:
+        """Check duplicate replay identities are still rejected after parallel extraction."""
+        first = self.extracted_fixture("a", 10, 2)
+        duplicate = self.extracted_fixture("a", 10, 3)
+        with self.assertRaisesRegex(ValueError, "Duplicate PPO game"):
+            combine_extracted([first, duplicate])
+
+    def test_uncompressed_npz_preserves_rollout_arrays(self) -> None:
+        """Check uncompressed npz stores the same arrays as compressed npz."""
+        arrays = dict(
+            x=np.arange(12, dtype=np.float32).reshape(4, 3),
+            sizes=np.array([2, 2], dtype=np.int32),
+            targets=np.array([1, 0], dtype=np.int32),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            np.savez(p / "plain.npz", **arrays)
+            np.savez_compressed(p / "compressed.npz", **arrays)
+            with np.load(p / "plain.npz") as plain, np.load(p / "compressed.npz") as compressed:
+                for key, expected in arrays.items():
+                    np.testing.assert_array_equal(plain[key], expected)
+                    np.testing.assert_array_equal(plain[key], compressed[key])
 
     def test_zero_critic_upgrade_preserves_policy(self) -> None:
         """Check zero critic upgrade preserves policy."""

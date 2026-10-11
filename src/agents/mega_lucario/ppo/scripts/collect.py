@@ -71,6 +71,7 @@ def collect(
     workers: int = 2,
     *,
     games: int = 5000,
+    extract_workers: int = 1,
     opponent_weights: dict[str, float] | None = None,
     opponent_models: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -88,6 +89,8 @@ def collect(
         raise ValueError("Opponent aliases must be identifiers")
     if workers < 1:
         raise ValueError("Use positive workers")
+    if extract_workers < 1:
+        raise ValueError("Use positive extract workers")
     if games_per_opponent is not None and (games_per_opponent < 2 or games_per_opponent % 2):
         raise ValueError("Use a positive even game count per opponent")
     if not 0 < temperature < 100 or not 0 <= seed <= 2**32 - 1 or not 0 <= sample_seed <= 2**32 - 1:
@@ -211,7 +214,9 @@ def collect(
             )
     results = [r for rows in rows_by_job if rows is not None for r in rows]
     print("PPO rollout extraction start", flush=True)
-    data, manifest = extract(output / "replays", output, sha256(checkpoint), temperature)
+    data, manifest = extract(
+        output / "replays", output, sha256(checkpoint), temperature, extract_workers
+    )
     print("PPO rollout behavior audit start", flush=True)
     torch.set_num_threads(1)
     manifest["audit"] = audit_behavior(model, data, temperature)
@@ -228,6 +233,7 @@ def collect(
         sample_seed=sample_seed,
         temperature=temperature,
         workers=workers,
+        extract_workers=extract_workers,
         gbdt_model_sha256=sha256(gbdt_model) if gbdt_model else None,
         reward=DEFAULTS["reward"],
         timestep="one learner decision, sum prefix logp; terminal-only reward",
@@ -266,6 +272,7 @@ if __name__ == "__main__":
     p.add_argument("--sample-seed", type=int, default=202650000)
     p.add_argument("--temperature", type=float, default=DEFAULTS["temperature"])
     p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--extract-workers", type=int, default=1)
     a = p.parse_args()
     roster = json.loads(a.opponent_config.read_text()) if a.opponent_config else {}
     collect(
@@ -280,6 +287,7 @@ if __name__ == "__main__":
         a.temperature,
         a.workers,
         games=a.games,
+        extract_workers=a.extract_workers,
         opponent_weights=roster.get("weights"),
         opponent_models=roster.get("models"),
     )

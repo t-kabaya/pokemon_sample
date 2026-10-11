@@ -20,6 +20,9 @@ TRANSFORMER_RATING_WORKERS ?= 2
 PPO_RATING_DIR ?= outputs/mega_lucario/rule_vs_ppo_rating
 PPO_RATING_GAMES ?= 100
 PPO_RATING_WORKERS ?= 2
+TRANSFORMER_VS_PPO_RATING_DIR ?= outputs/mega_lucario/transformer_vs_ppo_rating
+TRANSFORMER_VS_PPO_RATING_GAMES ?= 1000
+TRANSFORMER_VS_PPO_RATING_WORKERS ?= 2
 TRANSFORMER_DIR ?= outputs/mega_lucario/transformer_training
 TRANSFORMER_REPLAYS ?= $(TRANSFORMER_DIR)/gbdt_replays
 TRANSFORMER_FEATURES ?= $(TRANSFORMER_DIR)/distillation
@@ -36,6 +39,7 @@ PPO_DIR ?= outputs/mega_lucario/ppo_training
 PPO_CYCLES ?= 1
 PPO_GAMES ?= 5000
 PPO_WORKERS ?= 2
+PPO_EXTRACT_WORKERS ?= 32
 PPO_DEVICE ?= cpu
 PPO_BATCH_SIZE ?= 1024
 PPO_MICRO_BATCH_SIZE ?= 128
@@ -253,6 +257,26 @@ mega-lucario-rule-vs-ppo-rating: $(ARENA)
 # Hugging FaceからPPO重みを取得してから、ルールベースのメガルカリオとPPOを対戦させる。
 mega-lucario-rule-vs-uploaded-ppo-rating: hf-install-ppo-weights mega-lucario-rule-vs-ppo-rating
 
+.PHONY: mega-lucario-transformer-vs-ppo-rating
+# C++ arenaで初期TransformerとPPO後Transformerを席交換込みで1000戦させ、勝率とratingを計測する。
+# transformer=学習済みTransformer（$(TRANSFORMER_BIN)）、ppo=PPO後Transformer（$(PPO_BIN)）。
+# 結果は $(TRANSFORMER_VS_PPO_RATING_DIR)/ratings/ に出力される（games.jsonl, ratings.json, ratings.csv）。
+mega-lucario-transformer-vs-ppo-rating: $(ARENA)
+	rm -rf $(TRANSFORMER_VS_PPO_RATING_DIR)
+	mkdir -p $(TRANSFORMER_VS_PPO_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "transformer": {"agent": "mega_lucario_transformer", "model": "$(abspath $(TRANSFORMER_BIN))"},' \
+	  '  "ppo": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_BIN))"}' \
+	  '}' > $(TRANSFORMER_VS_PPO_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(TRANSFORMER_VS_PPO_RATING_DIR)/roster.json \
+	  --output-dir $(TRANSFORMER_VS_PPO_RATING_DIR)/ratings \
+	  --games-per-pair $(TRANSFORMER_VS_PPO_RATING_GAMES) \
+	  --workers $(TRANSFORMER_VS_PPO_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(TRANSFORMER_VS_PPO_RATING_DIR)/ratings/games.jsonl
+
 # -----------------------------------------------------------------------------
 # Train tasks
 # -----------------------------------------------------------------------------
@@ -291,7 +315,7 @@ mega-lucario-transformer-train-run: $(ARENA)
 .PHONY: mega-lucario-ppo-train
 # 学習済みTransformerを初期方策として、C++ arenaのon-policy rolloutからPPOで改善し、
 # cycleごとにmodel.pt/model.binをexportしてnative validationまで行う。
-# 例 make mega-lucario-ppo-train PPO_GAMES=1000 PPO_WORKERS=2 PPO_DEVICE=cpu
+# 例 make mega-lucario-ppo-train PPO_GAMES=1000 PPO_WORKERS=2 PPO_EXTRACT_WORKERS=4 PPO_DEVICE=cpu
 mega-lucario-ppo-train: $(ARENA)
 	rm -rf $(PPO_DIR)
 	mkdir -p $(PPO_DIR)
@@ -303,6 +327,7 @@ mega-lucario-ppo-train: $(ARENA)
 	  --cycles $(PPO_CYCLES) \
 	  --games $(PPO_GAMES) \
 	  --workers $(PPO_WORKERS) \
+	  --extract-workers $(PPO_EXTRACT_WORKERS) \
 	  --temperature $(PPO_TEMPERATURE) \
 	  --device $(PPO_DEVICE) \
 	  --batch-size $(PPO_BATCH_SIZE) \
