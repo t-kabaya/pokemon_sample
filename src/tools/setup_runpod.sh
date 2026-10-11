@@ -17,6 +17,7 @@ Options:
 Environment:
   UV_SYNC_ARGS            Extra arguments appended to "uv sync --locked --dev".
   CXX                     C++ compiler used by build_cpp_engine.py, default is g++.
+  HF_TOKEN                Optional Hugging Face token used by the hf CLI.
 
 Kaggle credentials:
   Put kaggle.json at ~/.kaggle/kaggle.json, or provide KAGGLE_USERNAME and
@@ -113,6 +114,14 @@ uv sync --locked --dev ${UV_SYNC_ARGS:-}
 
 log "Checking PyTorch and CUDA visibility"
 uv run python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda, 'available', torch.cuda.is_available())"
+
+log "Checking Hugging Face CLI"
+uv run hf --version
+if uv run hf auth whoami; then
+  log "Hugging Face authentication is available"
+else
+  printf 'warning: Hugging Face authentication is not configured. Run `uv run hf auth login` or set HF_TOKEN before uploading artifacts.\n' >&2
+fi
 
 if [[ "$skip_assets" -eq 0 ]]; then
   if [[ "$skip_kaggle_check" -eq 0 ]]; then

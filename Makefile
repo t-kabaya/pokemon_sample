@@ -53,6 +53,11 @@ RUNPOD_SETUP_ARGS ?=
 runpod-setup:
 	bash src/tools/setup_runpod.sh $(RUNPOD_SETUP_ARGS)
 
+.PHONY: hf-login
+# Hugging FaceのWrite権限つきtokenでログインする。tokenは https://huggingface.co/settings/tokens で作成する。
+hf-login:
+	uv run hf auth login
+
 $(ARENA):
 	$(PYTHON) src/tools/build_cpp_engine.py --output $(ARENA)
 

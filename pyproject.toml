@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "huggingface-hub>=2.2.0",
     "kaggle>=2.2.4",
     "ruff>=0.16.7",
 ]
