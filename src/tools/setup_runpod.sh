@@ -118,11 +118,16 @@ if uv run hf auth whoami; then
   hf_authenticated=1
   log "Hugging Face authentication is available"
 else
-  printf 'warning: Hugging Face authentication is not configured. Run `uv run hf auth login` or set HF_TOKEN before downloading or uploading weights.\n' >&2
+  log "Hugging Face authentication is not configured; starting interactive login"
+  uv run hf auth login
+  if uv run hf auth whoami; then
+    hf_authenticated=1
+    log "Hugging Face authentication is available"
+  fi
 fi
 
 if [[ "$hf_authenticated" -eq 0 ]]; then
-  die "Hugging Face authentication is required to download weights. Run uv run hf auth login or set HF_TOKEN."
+  die "Hugging Face authentication is required to download weights."
 fi
 hf_model_repo="${HF_MODEL_REPO:-kaba777/ptcg-mega-lucario-models}"
 hf_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ptcg-hf-weights.XXXXXX")"
