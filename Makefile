@@ -39,6 +39,7 @@ PPO_MICRO_BATCH_SIZE ?= 128
 PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
+PPO_CHECKPOINT ?= $(PPO_DIR)/cycle-000/models/model.pt
 RUNPOD_SETUP_ARGS ?=
 HF_NAMESPACE ?= kaba777
 HF_MODEL_REPO ?= $(HF_NAMESPACE)/ptcg-mega-lucario-models
@@ -47,6 +48,7 @@ HF_REPO_VISIBILITY ?= --private
 HF_ARTIFACT_DIR ?= artifacts/hf
 HF_TRANSFORMER_MODEL_DIR ?= mega_lucario/transformer
 HF_GBDT_MODEL_DIR ?= mega_lucario/gbdt
+HF_PPO_MODEL_DIR ?= mega_lucario/ppo
 
 # -----------------------------------------------------------------------------
 # Setup tasks
@@ -93,6 +95,13 @@ hf-upload-transformer-weights:
 hf-upload-gbdt-weights:
 	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
 	uv run hf upload $(HF_MODEL_REPO) $(MODEL) $(HF_GBDT_MODEL_DIR)/model.gbdt --repo-type model --commit-message "Upload GBDT weights"
+
+.PHONY: hf-upload-ppo-weights
+# PPOで作成したmodel.pt/model.binだけをHugging Faceへアップロードする。
+hf-upload-ppo-weights:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	uv run hf upload $(HF_MODEL_REPO) $(PPO_CHECKPOINT) $(HF_PPO_MODEL_DIR)/model.pt --repo-type model --commit-message "Upload PPO checkpoint"
+	uv run hf upload $(HF_MODEL_REPO) $(PPO_BIN) $(HF_PPO_MODEL_DIR)/model.bin --repo-type model --commit-message "Upload PPO C++ weights"
 
 .PHONY: hf-upload-training-weights
 # Transformerのmodel.pt/model.binとGBDTのmodel.gbdtだけをHugging Faceへアップロードする。
