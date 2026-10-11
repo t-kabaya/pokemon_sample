@@ -59,6 +59,7 @@ def main() -> None:
     roster = json.loads(a.opponent_config.read_text()) if a.opponent_config else {}
     for cycle in range(a.cycles):
         output = a.output_dir / f"cycle-{cycle:03d}"
+        print(f"PPO cycle {cycle + 1}/{a.cycles}: rollout collection start", flush=True)
         collection = collect(
             current,
             output / "rollout",
@@ -74,6 +75,7 @@ def main() -> None:
             opponent_weights=roster.get("weights"),
             opponent_models=roster.get("models"),
         )
+        print(f"PPO cycle {cycle + 1}/{a.cycles}: training start", flush=True)
         model, payload = load_checkpoint(current, CONTRACT_ID, DECK_COUNTS, NAMES)
         training = train(
             model,
@@ -84,7 +86,9 @@ def main() -> None:
             training_config(a, a.update_seed + cycle),
         )
         current = output / "models/model.pt"
+        print(f"PPO cycle {cycle + 1}/{a.cycles}: export start", flush=True)
         export(current, output / "models/model.bin")
+        print(f"PPO cycle {cycle + 1}/{a.cycles}: validation start", flush=True)
         validation = validate(
             current, output / "models/model.bin", a.gbdt_model, output / "validation", a.binary
         )

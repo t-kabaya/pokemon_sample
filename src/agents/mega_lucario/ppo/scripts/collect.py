@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import argparse
 import json
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import torch
 
@@ -131,6 +131,11 @@ def collect(
             if count:
                 jobs.append((opponent, seat, count, offset))
             offset += count
+    print(
+        f"PPO rollout collection start: {total} games across {len(jobs)} batches "
+        f"with {workers} workers",
+        flush=True,
+    )
 
     def run(job: tuple[str, int, int, int]) -> list[dict[str, Any]]:
         """Run and validate one sampled opponent/seat match batch."""
@@ -189,9 +194,25 @@ def collect(
         print(f"Collected {opponent} seat {seat}: {count} games", flush=True)
         return records
 
+    rows_by_job: list[list[dict[str, Any]] | None] = [None] * len(jobs)
+    completed_games = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = [r for rows in pool.map(run, jobs) for r in rows]
+        futures = {pool.submit(run, job): i for i, job in enumerate(jobs)}
+        for future in as_completed(futures):
+            index = futures[future]
+            rows_by_job[index] = future.result()
+            opponent, seat, count, _ = jobs[index]
+            completed_games += count
+            percent = 100 * completed_games / total
+            print(
+                f"PPO rollout progress: {completed_games}/{total} games "
+                f"({percent:.1f}%) after {opponent} seat {seat}",
+                flush=True,
+            )
+    results = [r for rows in rows_by_job if rows is not None for r in rows]
+    print("PPO rollout extraction start", flush=True)
     data, manifest = extract(output / "replays", output, sha256(checkpoint), temperature)
+    print("PPO rollout behavior audit start", flush=True)
     torch.set_num_threads(1)
     manifest["audit"] = audit_behavior(model, data, temperature)
     manifest["behavior_bin_sha256"] = sha256(output / "behavior.bin")

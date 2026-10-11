@@ -217,6 +217,14 @@ def train(
     order = rng.permutation(training_indices)
     reports = []
     used = 0
+    max_updates = min(
+        config["updates"], (len(order) + config["batch_size"] - 1) // config["batch_size"]
+    )
+    print(
+        f"PPO update start: {max_updates} updates from {len(training_indices)} "
+        f"training decisions on {device}",
+        flush=True,
+    )
     for start in range(0, len(order), config["batch_size"]):
         if len(reports) >= config["updates"]:
             break
@@ -256,6 +264,13 @@ def train(
         record["gradient_norm"] = float(norm)
         reports.append(record)
         used += len(indices)
+        percent = 100 * len(reports) / max_updates
+        print(
+            f"PPO update progress: {len(reports)}/{max_updates} updates "
+            f"({percent:.1f}%), decisions_used={used}/{len(training_indices)}",
+            flush=True,
+        )
+    print("PPO heldout KL evaluation start", flush=True)
     with torch.no_grad():
         ratios = []
         log_deltas = []
