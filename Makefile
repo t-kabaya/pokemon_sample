@@ -20,9 +20,15 @@ TRANSFORMER_RATING_WORKERS ?= 2
 PPO_RATING_DIR ?= outputs/mega_lucario/rule_vs_ppo_rating
 PPO_RATING_GAMES ?= 100
 PPO_RATING_WORKERS ?= 2
+PPO_PREVIOUS_VS_LATEST_RATING_DIR ?= outputs/mega_lucario/ppo_previous_vs_latest_rating
+PPO_PREVIOUS_VS_LATEST_RATING_GAMES ?= 1000
+PPO_PREVIOUS_VS_LATEST_RATING_WORKERS ?= 2
 TRANSFORMER_VS_PPO_RATING_DIR ?= outputs/mega_lucario/transformer_vs_ppo_rating
 TRANSFORMER_VS_PPO_RATING_GAMES ?= 1000
 TRANSFORMER_VS_PPO_RATING_WORKERS ?= 2
+TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR ?= outputs/mega_lucario/transformer_vs_ppo_cycle001_rating
+TRANSFORMER_VS_PPO_CYCLE001_RATING_GAMES ?= 1000
+TRANSFORMER_VS_PPO_CYCLE001_RATING_WORKERS ?= 2
 TRANSFORMER_DIR ?= outputs/mega_lucario/transformer_training
 TRANSFORMER_REPLAYS ?= $(TRANSFORMER_DIR)/gbdt_replays
 TRANSFORMER_FEATURES ?= $(TRANSFORMER_DIR)/distillation
@@ -40,6 +46,7 @@ PPO_CYCLES ?= 1
 PPO_BASE_CYCLE ?= 0
 PPO_BASE_CYCLE_ID ?= $(shell printf "%03d" $(PPO_BASE_CYCLE))
 PPO_NEXT_CYCLE ?= $(shell expr $(PPO_BASE_CYCLE) + 1)
+PPO_CYCLE_IDS ?= 000 001
 PPO_GAMES ?= 5000
 PPO_WORKERS ?= 2
 PPO_EXTRACT_WORKERS ?= 32
@@ -50,6 +57,10 @@ PPO_UPDATES ?= 128
 PPO_TEMPERATURE ?= 1.0
 PPO_BIN ?= $(PPO_DIR)/cycle-000/models/model.bin
 PPO_CHECKPOINT ?= $(PPO_DIR)/cycle-000/models/model.pt
+PPO_CYCLE001_BIN ?= $(PPO_DIR)/cycle-001/models/model.bin
+PPO_LATEST_BIN ?= $(PPO_DIR)/latest/models/model.bin
+PPO_LATEST_CHECKPOINT ?= $(PPO_DIR)/latest/models/model.pt
+PPO_PREVIOUS_BIN ?= $(PPO_DIR)/previous/models/model.bin
 PPO_BASE_CHECKPOINT ?= $(PPO_DIR)/cycle-$(PPO_BASE_CYCLE_ID)/models/model.pt
 RUNPOD_SETUP_ARGS ?=
 HF_NAMESPACE ?= kaba777
@@ -109,21 +120,44 @@ hf-upload-gbdt-weights:
 	uv run hf upload $(HF_MODEL_REPO) $(MODEL) $(HF_GBDT_MODEL_DIR)/model.gbdt --repo-type model --commit-message "Upload GBDT weights"
 
 .PHONY: hf-upload-ppo-weights
-# PPOで作成したmodel.pt/model.binだけをHugging Faceへアップロードする。
+# ローカルの最新PPO cycleを自動判定し、Hugging Faceの$(HF_PPO_MODEL_DIR)/cycle-xxx/へアップロードする。
 hf-upload-ppo-weights:
 	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
-	uv run hf upload $(HF_MODEL_REPO) $(PPO_CHECKPOINT) $(HF_PPO_MODEL_DIR)/model.pt --repo-type model --commit-message "Upload PPO checkpoint"
-	uv run hf upload $(HF_MODEL_REPO) $(PPO_BIN) $(HF_PPO_MODEL_DIR)/model.bin --repo-type model --commit-message "Upload PPO C++ weights"
+	uv run python src/tools/upload_latest_ppo_cycle.py $(HF_MODEL_REPO) \
+	  --repo-type model \
+	  --remote-root $(HF_PPO_MODEL_DIR) \
+	  --output-dir $(PPO_DIR)
 
-.PHONY: hf-install-ppo-weights
-# Hugging FaceからPPOのmodel.pt/model.binを取得し、$(PPO_DIR)配下へ配置する。
-hf-install-ppo-weights:
+.PHONY: hf-install-ppo-cycles
+# Hugging Faceから指定したPPO cycle群を取得し、$(PPO_DIR)/cycle-xxx/models/へ配置する。
+# 例 make hf-install-ppo-cycles PPO_CYCLE_IDS="000 001"
+hf-install-ppo-cycles:
 	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
 	rm -rf $(HF_PPO_DOWNLOAD_DIR)
-	mkdir -p $(HF_PPO_DOWNLOAD_DIR) $(dir $(PPO_CHECKPOINT))
-	uv run hf download $(HF_MODEL_REPO) $(HF_PPO_MODEL_DIR)/model.pt $(HF_PPO_MODEL_DIR)/model.bin --repo-type model --local-dir $(HF_PPO_DOWNLOAD_DIR)
-	cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/model.pt $(PPO_CHECKPOINT)
-	cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/model.bin $(PPO_BIN)
+	mkdir -p $(HF_PPO_DOWNLOAD_DIR)
+	for cycle in $(PPO_CYCLE_IDS); do \
+	  uv run hf download $(HF_MODEL_REPO) \
+	    $(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.pt \
+	    $(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.bin \
+	    --repo-type model \
+	    --local-dir $(HF_PPO_DOWNLOAD_DIR); \
+	  mkdir -p $(PPO_DIR)/cycle-$$cycle/models; \
+	  cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.pt \
+	    $(PPO_DIR)/cycle-$$cycle/models/model.pt; \
+	  cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.bin \
+	    $(PPO_DIR)/cycle-$$cycle/models/model.bin; \
+	done
+
+.PHONY: hf-install-latest-ppo-cycle
+# Hugging Face上の$(HF_PPO_MODEL_DIR)/cycle-xxxから一番新しいPPO cycleを自動判定して取得する。
+hf-install-latest-ppo-cycle:
+	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
+	uv run python src/tools/install_latest_ppo_cycle.py $(HF_MODEL_REPO) \
+	  --repo-type model \
+	  --remote-root $(HF_PPO_MODEL_DIR) \
+	  --output-dir $(PPO_DIR) \
+	  --alias latest \
+	  --previous-alias previous
 
 .PHONY: hf-upload-training-weights
 # Transformerのmodel.pt/model.binとGBDTのmodel.gbdtだけをHugging Faceへアップロードする。
@@ -194,7 +228,15 @@ mega-lucario-rule-vs-ppo-viewer:
 
 .PHONY: mega-lucario-rule-vs-uploaded-ppo-viewer
 # Hugging FaceからPPO重みを取得してから、ルールベースのメガルカリオとPPOを1回対戦・可視化する。
-mega-lucario-rule-vs-uploaded-ppo-viewer: hf-install-ppo-weights mega-lucario-rule-vs-ppo-viewer
+mega-lucario-rule-vs-uploaded-ppo-viewer: hf-install-latest-ppo-cycle
+	rm -rf $(PPO_VIEW_DIR)
+	mkdir -p $(PPO_VIEW_DIR)
+	$(PYTHON) src/tools/run_mega_lucario_transformer_viewer.py \
+	  --checkpoint $(PPO_LATEST_CHECKPOINT) \
+	  --device $(PPO_DEVICE) \
+	  --output-json $(PPO_VIEW_JSON) \
+	  --output-html $(PPO_VIEW_HTML)
+	$(PYTHON) -m webbrowser file://$(abspath $(PPO_VIEW_HTML))
 
 # -----------------------------------------------------------------------------
 # Rating tasks
@@ -259,7 +301,41 @@ mega-lucario-rule-vs-ppo-rating: $(ARENA)
 
 .PHONY: mega-lucario-rule-vs-uploaded-ppo-rating
 # Hugging FaceからPPO重みを取得してから、ルールベースのメガルカリオとPPOを対戦させる。
-mega-lucario-rule-vs-uploaded-ppo-rating: hf-install-ppo-weights mega-lucario-rule-vs-ppo-rating
+mega-lucario-rule-vs-uploaded-ppo-rating: hf-install-latest-ppo-cycle $(ARENA)
+	rm -rf $(PPO_RATING_DIR)
+	mkdir -p $(PPO_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "rule": {"agent": "mega_lucario"},' \
+	  '  "ppo": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_LATEST_BIN))"}' \
+	  '}' > $(PPO_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(PPO_RATING_DIR)/roster.json \
+	  --output-dir $(PPO_RATING_DIR)/ratings \
+	  --games-per-pair $(PPO_RATING_GAMES) \
+	  --workers $(PPO_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(PPO_RATING_DIR)/ratings/games.jsonl
+
+.PHONY: mega-lucario-previous-ppo-vs-uploaded-ppo-rating
+# Hugging Faceから最新PPOと一つ前のPPOを取得し、席交換込みで対戦させ、勝率とratingを計測する。
+# previous=一つ前のPPO、latest=最新PPO。
+# 結果は $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)/ratings/ に出力される（games.jsonl, ratings.json, ratings.csv）。
+mega-lucario-previous-ppo-vs-uploaded-ppo-rating: hf-install-latest-ppo-cycle $(ARENA)
+	rm -rf $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)
+	mkdir -p $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "previous": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_PREVIOUS_BIN))"},' \
+	  '  "latest": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_LATEST_BIN))"}' \
+	  '}' > $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)/roster.json \
+	  --output-dir $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)/ratings \
+	  --games-per-pair $(PPO_PREVIOUS_VS_LATEST_RATING_GAMES) \
+	  --workers $(PPO_PREVIOUS_VS_LATEST_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(PPO_PREVIOUS_VS_LATEST_RATING_DIR)/ratings/games.jsonl
 
 .PHONY: mega-lucario-transformer-vs-ppo-rating
 # C++ arenaで初期TransformerとPPO後Transformerを席交換込みで1000戦させ、勝率とratingを計測する。
@@ -280,6 +356,26 @@ mega-lucario-transformer-vs-ppo-rating: $(ARENA)
 	  --games-per-pair $(TRANSFORMER_VS_PPO_RATING_GAMES) \
 	  --workers $(TRANSFORMER_VS_PPO_RATING_WORKERS)
 	$(PYTHON) src/tools/summarize_match_results.py $(TRANSFORMER_VS_PPO_RATING_DIR)/ratings/games.jsonl
+
+.PHONY: mega-lucario-transformer-vs-ppo-cycle001-rating
+# C++ arenaで初期Transformerと取得済みPPO cycle-001を席交換込みで1000戦させ、勝率とratingを計測する。
+# transformer=学習済みTransformer（$(TRANSFORMER_BIN)）、ppo-cycle001=PPO cycle-001（$(PPO_CYCLE001_BIN)）。
+# 結果は $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)/ratings/ に出力される（games.jsonl, ratings.json, ratings.csv）。
+mega-lucario-transformer-vs-ppo-cycle001-rating: $(ARENA)
+	rm -rf $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)
+	mkdir -p $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)
+	printf '%s\n' \
+	  '{' \
+	  '  "transformer": {"agent": "mega_lucario_transformer", "model": "$(abspath $(TRANSFORMER_BIN))"},' \
+	  '  "ppo-cycle001": {"agent": "mega_lucario_transformer", "model": "$(abspath $(PPO_CYCLE001_BIN))"}' \
+	  '}' > $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)/roster.json
+	$(PYTHON) src/tools/rating_arena.py \
+	  --binary $(ARENA) \
+	  --roster $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)/roster.json \
+	  --output-dir $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)/ratings \
+	  --games-per-pair $(TRANSFORMER_VS_PPO_CYCLE001_RATING_GAMES) \
+	  --workers $(TRANSFORMER_VS_PPO_CYCLE001_RATING_WORKERS)
+	$(PYTHON) src/tools/summarize_match_results.py $(TRANSFORMER_VS_PPO_CYCLE001_RATING_DIR)/ratings/games.jsonl
 
 # -----------------------------------------------------------------------------
 # Train tasks
