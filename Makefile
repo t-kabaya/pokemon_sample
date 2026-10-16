@@ -50,6 +50,10 @@ PPO_CYCLE_IDS ?= 000 001
 PPO_GAMES ?= 5000
 PPO_WORKERS ?= 2
 PPO_EXTRACT_WORKERS ?= 32
+PPO_ROLLOUT_CHUNK_GAMES ?= 64
+PPO_AUDIT_THREADS ?= 32
+PPO_VALIDATION_WORKERS ?= 3
+PPO_VALIDATION_THREADS ?= 32
 PPO_DEVICE ?= cpu
 PPO_BATCH_SIZE ?= 1024
 PPO_MICRO_BATCH_SIZE ?= 128
@@ -415,7 +419,9 @@ mega-lucario-transformer-train-run: $(ARENA)
 .PHONY: mega-lucario-ppo-train
 # 学習済みTransformerを初期方策として、C++ arenaのon-policy rolloutからPPOで改善し、
 # cycleごとにmodel.pt/model.binをexportしてnative validationまで行う。
-# 例 make mega-lucario-ppo-train PPO_GAMES=1000 PPO_WORKERS=2 PPO_EXTRACT_WORKERS=4 PPO_DEVICE=cpu
+# PPO_WORKERSはC++ arenaの同時process数、PPO_ROLLOUT_CHUNK_GAMESは各processのゲーム数。
+# PPO_AUDIT_THREADSとPPO_VALIDATION_THREADSはPyTorch CPU推論のスレッド数。
+# 例 make mega-lucario-ppo-train PPO_GAMES=1000 PPO_WORKERS=32 PPO_EXTRACT_WORKERS=32 PPO_DEVICE=cuda
 mega-lucario-ppo-train: $(ARENA)
 	rm -rf $(PPO_DIR)
 	mkdir -p $(PPO_DIR)
@@ -428,6 +434,10 @@ mega-lucario-ppo-train: $(ARENA)
 	  --games $(PPO_GAMES) \
 	  --workers $(PPO_WORKERS) \
 	  --extract-workers $(PPO_EXTRACT_WORKERS) \
+	  --rollout-chunk-games $(PPO_ROLLOUT_CHUNK_GAMES) \
+	  --audit-threads $(PPO_AUDIT_THREADS) \
+	  --validation-workers $(PPO_VALIDATION_WORKERS) \
+	  --validation-threads $(PPO_VALIDATION_THREADS) \
 	  --temperature $(PPO_TEMPERATURE) \
 	  --device $(PPO_DEVICE) \
 	  --batch-size $(PPO_BATCH_SIZE) \
@@ -450,6 +460,10 @@ mega-lucario-ppo-train-next-cycle: $(ARENA)
 	  --games $(PPO_GAMES) \
 	  --workers $(PPO_WORKERS) \
 	  --extract-workers $(PPO_EXTRACT_WORKERS) \
+	  --rollout-chunk-games $(PPO_ROLLOUT_CHUNK_GAMES) \
+	  --audit-threads $(PPO_AUDIT_THREADS) \
+	  --validation-workers $(PPO_VALIDATION_WORKERS) \
+	  --validation-threads $(PPO_VALIDATION_THREADS) \
 	  --temperature $(PPO_TEMPERATURE) \
 	  --device $(PPO_DEVICE) \
 	  --batch-size $(PPO_BATCH_SIZE) \

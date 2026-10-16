@@ -79,9 +79,12 @@ def audit(
     feature_dir: Path | None = None,
     probe: Path | None = None,
     probe_queries: int = 1000,
+    threads: int = 1,
 ) -> dict[str, Any]:
     """Compare token features, logits, Values, and actions across Python and C++."""
-    torch.set_num_threads(1)
+    if threads < 1:
+        raise ValueError("audit threads must be positive")
+    torch.set_num_threads(threads)
     model, metadata = load_checkpoint(checkpoint, CONTRACT_ID, DECK_COUNTS, NAMES)
     identity = sha256(checkpoint)
     # Export stores float32 tensors; evaluate those tensors in double as C++ does.
@@ -225,5 +228,15 @@ if __name__ == "__main__":
     p.add_argument("--feature-dir", type=Path)
     p.add_argument("--probe", type=Path, default=ROOT / "build/transformer_probe")
     p.add_argument("--probe-queries", type=int, default=1000)
+    p.add_argument("--threads", type=int, default=1)
     a = p.parse_args()
-    audit(a.replay_dir, a.checkpoint, a.model, a.output, a.feature_dir, a.probe, a.probe_queries)
+    audit(
+        a.replay_dir,
+        a.checkpoint,
+        a.model,
+        a.output,
+        a.feature_dir,
+        a.probe,
+        a.probe_queries,
+        a.threads,
+    )

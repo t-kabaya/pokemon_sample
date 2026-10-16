@@ -45,6 +45,9 @@ def main() -> None:
     p.add_argument("--opponents", nargs="+", default=DEFAULTS["opponents"])
     p.add_argument("--workers", type=int, default=2)
     p.add_argument("--extract-workers", type=int, default=1)
+    p.add_argument("--rollout-chunk-games", type=int, default=64)
+    p.add_argument("--validation-workers", type=int, default=1)
+    p.add_argument("--validation-threads", type=int, default=1)
     p.add_argument("--seed", type=int, default=202640000)
     p.add_argument("--sample-seed", type=int, default=202650000)
     p.add_argument("--update-seed", type=int, default=204)
@@ -62,10 +65,14 @@ def main() -> None:
         if output.exists() and any(output.iterdir()):
             p.error(f"{output} must be empty")
     a.output_dir.mkdir(parents=True, exist_ok=True)
-    initial = a.output_dir / ("initial.pt" if a.start_cycle == 0 else f"initial-{a.start_cycle:03d}.pt")
+    initial = a.output_dir / (
+        "initial.pt" if a.start_cycle == 0 else f"initial-{a.start_cycle:03d}.pt"
+    )
     current = initialize(a.checkpoint, initial)
     cycles_path = a.output_dir / "cycles.json"
-    reports = json.loads(cycles_path.read_text()) if a.start_cycle > 0 and cycles_path.exists() else []
+    reports = (
+        json.loads(cycles_path.read_text()) if a.start_cycle > 0 and cycles_path.exists() else []
+    )
     games = len(a.opponents) * a.games_per_opponent if a.games_per_opponent is not None else a.games
     roster = json.loads(a.opponent_config.read_text()) if a.opponent_config else {}
     for cycle in range(a.start_cycle, a.start_cycle + a.cycles):
@@ -85,6 +92,8 @@ def main() -> None:
             a.workers,
             games=a.games,
             extract_workers=a.extract_workers,
+            rollout_chunk_games=a.rollout_chunk_games,
+            audit_threads=a.audit_threads,
             opponent_weights=roster.get("weights"),
             opponent_models=roster.get("models"),
         )
@@ -103,7 +112,13 @@ def main() -> None:
         export(current, output / "models/model.bin")
         print(f"PPO cycle {cycle_number}/{a.cycles}: validation start", flush=True)
         validation = validate(
-            current, output / "models/model.bin", a.gbdt_model, output / "validation", a.binary
+            current,
+            output / "models/model.bin",
+            a.gbdt_model,
+            output / "validation",
+            a.binary,
+            workers=a.validation_workers,
+            threads=a.validation_threads,
         )
         report = dict(
             cycle=cycle,

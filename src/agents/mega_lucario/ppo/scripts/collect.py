@@ -12,8 +12,7 @@ import argparse
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-import torch
+from dataclasses import dataclass
 
 from agents.mega_lucario.ppo.extract import extract
 from agents.mega_lucario.ppo.rollout import audit_behavior
@@ -33,6 +32,23 @@ if TYPE_CHECKING:
 
 
 DEFAULTS = json.loads((ROOT / "src/agents/mega_lucario/ppo/config.json").read_text())
+
+
+@dataclass(frozen=True)
+class RolloutJob:
+    """One independently seeded C++ arena invocation within a seat batch."""
+
+    opponent: str
+    seat: int
+    count: int
+    offset: int
+    batch_count: int
+    batch_start: int
+
+    def learner_sample_seed(self, sample_seed: int) -> int:
+        """Return the original batch's learner seed advanced to this chunk."""
+        batch_offset = self.offset - self.batch_start
+        return sample_seed + batch_offset * 2 + self.seat * self.batch_count + self.batch_start
 
 
 def allocate_games(
@@ -58,6 +74,26 @@ def allocate_games(
     return {n: 2 * p for n, p in zip(opponents, pairs)}
 
 
+def split_rollout_jobs(batches: Sequence[RolloutJob], chunk_games: int) -> list[RolloutJob]:
+    """Split seat batches into replay-directory-safe, deterministically seeded chunks."""
+    if chunk_games < 1:
+        raise ValueError("rollout chunk games must be positive")
+    jobs = []
+    for batch in batches:
+        for start in range(0, batch.count, chunk_games):
+            jobs.append(
+                RolloutJob(
+                    batch.opponent,
+                    batch.seat,
+                    min(chunk_games, batch.count - start),
+                    batch.offset + start,
+                    batch.count,
+                    start,
+                )
+            )
+    return jobs
+
+
 def collect(
     checkpoint: Path,
     output: Path,
@@ -72,6 +108,8 @@ def collect(
     *,
     games: int = 5000,
     extract_workers: int = 1,
+    rollout_chunk_games: int = 64,
+    audit_threads: int = 1,
     opponent_weights: dict[str, float] | None = None,
     opponent_models: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -91,6 +129,10 @@ def collect(
         raise ValueError("Use positive workers")
     if extract_workers < 1:
         raise ValueError("Use positive extract workers")
+    if rollout_chunk_games < 1:
+        raise ValueError("Use positive rollout chunk games")
+    if audit_threads < 1:
+        raise ValueError("Use positive audit threads")
     if games_per_opponent is not None and (games_per_opponent < 2 or games_per_opponent % 2):
         raise ValueError("Use a positive even game count per opponent")
     if not 0 < temperature < 100 or not 0 <= seed <= 2**32 - 1 or not 0 <= sample_seed <= 2**32 - 1:
@@ -126,23 +168,24 @@ def collect(
         raise ValueError("Run ppo/scripts/initialize.py first")
     output.mkdir(parents=True, exist_ok=True)
     export(checkpoint, output / "behavior.bin")
-    jobs = []
+    batches = []
     offset = 0
     for opponent in opponents:
         for seat in (0, 1):
             count = allocation[opponent] // 2
             if count:
-                jobs.append((opponent, seat, count, offset))
+                batches.append(RolloutJob(opponent, seat, count, offset, count, 0))
             offset += count
+    jobs = split_rollout_jobs(batches, rollout_chunk_games)
     print(
-        f"PPO rollout collection start: {total} games across {len(jobs)} batches "
+        f"PPO rollout collection start: {total} games across {len(jobs)} chunks "
         f"with {workers} workers",
         flush=True,
     )
 
-    def run(job: tuple[str, int, int, int]) -> list[dict[str, Any]]:
+    def run(job: RolloutJob) -> list[dict[str, Any]]:
         """Run and validate one sampled opponent/seat match batch."""
-        opponent, seat, count, offset = job
+        opponent, seat, count, offset = job.opponent, job.seat, job.count, job.offset
         rival = (
             "mega_lucario_transformer"
             if opponent == "self" or opponent in opponent_models
@@ -162,7 +205,7 @@ def collect(
             "--temperature",
             str(temperature),
             "--replay-dir",
-            str(output / "replays" / f"{opponent}-seat{seat}"),
+            str(output / "replays" / f"{opponent}-seat{seat}" / f"chunk-{job.batch_start:06d}"),
         ]
         for side, name in enumerate(names):
             letter = "a" if side == 0 else "b"
@@ -184,7 +227,7 @@ def collect(
                     f"--model-{letter}",
                     str((output / "behavior.bin").resolve()),
                     f"--sample-seed-{letter}",
-                    str(sample_seed + offset * 2 + side * count),
+                    str(job.learner_sample_seed(sample_seed)),
                 ]
             elif name == "mega_lucario_gbdt":
                 command += [f"--model-{letter}", str(gbdt_model.resolve())]
@@ -204,7 +247,7 @@ def collect(
         for future in as_completed(futures):
             index = futures[future]
             rows_by_job[index] = future.result()
-            opponent, seat, count, _ = jobs[index]
+            opponent, seat, count = jobs[index].opponent, jobs[index].seat, jobs[index].count
             completed_games += count
             percent = 100 * completed_games / total
             print(
@@ -218,8 +261,7 @@ def collect(
         output / "replays", output, sha256(checkpoint), temperature, extract_workers
     )
     print("PPO rollout behavior audit start", flush=True)
-    torch.set_num_threads(1)
-    manifest["audit"] = audit_behavior(model, data, temperature)
+    manifest["audit"] = audit_behavior(model, data, temperature, threads=audit_threads)
     manifest["behavior_bin_sha256"] = sha256(output / "behavior.bin")
     manifest["collection"] = dict(
         opponents=opponents,
@@ -234,6 +276,8 @@ def collect(
         temperature=temperature,
         workers=workers,
         extract_workers=extract_workers,
+        rollout_chunk_games=rollout_chunk_games,
+        audit_threads=audit_threads,
         gbdt_model_sha256=sha256(gbdt_model) if gbdt_model else None,
         reward=DEFAULTS["reward"],
         timestep="one learner decision, sum prefix logp; terminal-only reward",
@@ -273,6 +317,8 @@ if __name__ == "__main__":
     p.add_argument("--temperature", type=float, default=DEFAULTS["temperature"])
     p.add_argument("--workers", type=int, default=2)
     p.add_argument("--extract-workers", type=int, default=1)
+    p.add_argument("--rollout-chunk-games", type=int, default=64)
+    p.add_argument("--audit-threads", type=int, default=1)
     a = p.parse_args()
     roster = json.loads(a.opponent_config.read_text()) if a.opponent_config else {}
     collect(
@@ -288,6 +334,8 @@ if __name__ == "__main__":
         a.workers,
         games=a.games,
         extract_workers=a.extract_workers,
+        rollout_chunk_games=a.rollout_chunk_games,
+        audit_threads=a.audit_threads,
         opponent_weights=roster.get("weights"),
         opponent_models=roster.get("models"),
     )

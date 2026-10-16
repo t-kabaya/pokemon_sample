@@ -40,6 +40,7 @@ def add_training_args(p: argparse.ArgumentParser) -> None:
         p.add_argument("--" + name.replace("_", "-"), type=float, default=DEFAULTS[name])
     for name in ("batch_size", "updates", "holdout_decisions", "micro_batch_size"):
         p.add_argument("--" + name.replace("_", "-"), type=int, default=DEFAULTS[name])
+    p.add_argument("--audit-threads", type=int, default=1)
     p.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
 
 
@@ -62,6 +63,7 @@ def training_config(a: argparse.Namespace, seed: int) -> dict[str, Any]:
             "holdout_decisions",
             "micro_batch_size",
             "device",
+            "audit_threads",
         )
     }
     result.update(

@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "src/tools"))
 from agents.mega_lucario.ppo.extract import combine_extracted
 from agents.mega_lucario.ppo.rollout import compute_gae, joint_stats
+from agents.mega_lucario.ppo.scripts.collect import RolloutJob, split_rollout_jobs
 from agents.mega_lucario.ppo.scripts.initialize import CONTRACT_ID, DECK_COUNTS, NAMES, initialize
 from agents.mega_lucario.ppo.train import clipped_loss, distribution_targets, load_rollout
 from agents.mega_lucario.transformer.checkpoint import load_checkpoint
@@ -167,6 +168,14 @@ class PpoContracts(unittest.TestCase):
         self.assertEqual(combined["zero_queries"], 30)
         np.testing.assert_array_equal(combined["matrices"][0], np.full((2, 3), 10))
         np.testing.assert_array_equal(combined["matrices"][1], np.full((3, 3), 20))
+
+    def test_rollout_chunks_preserve_per_game_seeds(self) -> None:
+        """Check C++ chunks retain the original game and learner sampling seed ranges."""
+        jobs = split_rollout_jobs([RolloutJob("self", 1, 5, 10, 5, 0)], 2)
+        self.assertEqual([job.count for job in jobs], [2, 2, 1])
+        self.assertEqual([job.offset for job in jobs], [10, 12, 14])
+        self.assertEqual([job.batch_start for job in jobs], [0, 2, 4])
+        self.assertEqual([job.learner_sample_seed(100) for job in jobs], [125, 127, 129])
 
     def test_extraction_merge_rejects_duplicate_games(self) -> None:
         """Check duplicate replay identities are still rejected after parallel extraction."""

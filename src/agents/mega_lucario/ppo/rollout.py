@@ -119,16 +119,32 @@ def audit_behavior(
     model: ObservationTransformer,
     data: dict[str, NDArray[Any]],
     temperature: float,
-    batch_size: int = 128,
+    batch_size: int = 512,
+    threads: int = 1,
 ) -> dict[str, Any]:
     """Verify recorded log probabilities, Values, and entropy against the frozen policy."""
+    if batch_size < 1 or threads < 1:
+        raise ValueError("audit batch size and threads must be positive")
+    torch.set_num_threads(threads)
     model = model.cpu().double().eval()
     errors = dict(logp=0.0, value=0.0, entropy=0.0)
-    for start in range(0, len(data["old_logp"]), batch_size):
+    decisions = len(data["old_logp"])
+    batches = (decisions + batch_size - 1) // batch_size
+    print(
+        f"PPO rollout behavior audit: verifying {decisions} decisions with {threads} CPU threads",
+        flush=True,
+    )
+    for batch_index, start in enumerate(range(0, decisions, batch_size), start=1):
         indices = np.arange(start, min(start + batch_size, len(data["old_logp"])))
         stats = joint_stats(model, batch(data, indices, "cpu", torch.float64), temperature)
         for name, prediction in zip(errors, stats, strict=True):
             expected = data["old_" + name][indices]
             np.testing.assert_allclose(prediction.numpy(), expected, atol=2e-5, rtol=2e-5)
             errors[name] = max(errors[name], float(np.max(np.abs(prediction.numpy() - expected))))
-    return dict(max_abs_errors=errors, atol=2e-5, rtol=2e-5, decisions=len(data["old_logp"]))
+        if batch_index == batches or batch_index % max(1, batches // 10) == 0:
+            print(
+                f"PPO rollout behavior audit progress: {batch_index}/{batches} batches "
+                f"({100 * batch_index / batches:.1f}%)",
+                flush=True,
+            )
+    return dict(max_abs_errors=errors, atol=2e-5, rtol=2e-5, decisions=decisions, threads=threads)

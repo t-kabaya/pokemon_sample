@@ -182,7 +182,9 @@ def train(
     data, manifest = load_rollout(rollout, payload["contract_id"], sha256(checkpoint))
     if data["x"].ndim != 2 or data["x"].shape[1] != len(payload["feature_names"]):
         raise ValueError("PPO feature width mismatch")
-    audit = audit_behavior(model, data, manifest["temperature"])
+    audit = audit_behavior(
+        model, data, manifest["temperature"], threads=config.get("audit_threads", 1)
+    )
     advantages, returns = compute_gae(
         data["old_value"],
         data["reward"],
@@ -203,6 +205,8 @@ def train(
     device = config["device"]
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
+    # The PPO update runs on CUDA; keep PyTorch's CPU-side work from occupying audit threads.
+    torch.set_num_threads(1)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     model = model.float().to(device).train()
