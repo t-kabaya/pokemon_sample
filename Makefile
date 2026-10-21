@@ -139,16 +139,16 @@ hf-install-ppo-cycles:
 	test -n "$(HF_NAMESPACE)" || (echo "Set HF_NAMESPACE=<user-or-org>" >&2; exit 1)
 	rm -rf $(HF_PPO_DOWNLOAD_DIR)
 	mkdir -p $(HF_PPO_DOWNLOAD_DIR)
-	for cycle in $(PPO_CYCLE_IDS); do \
+	set -e; for cycle in $(PPO_CYCLE_IDS); do \
 	  uv run hf download $(HF_MODEL_REPO) \
 	    $(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.pt \
 	    $(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.bin \
 	    --repo-type model \
 	    --local-dir $(HF_PPO_DOWNLOAD_DIR); \
 	  mkdir -p $(PPO_DIR)/cycle-$$cycle/models; \
-	  cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.pt \
+	  cp -f $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.pt \
 	    $(PPO_DIR)/cycle-$$cycle/models/model.pt; \
-	  cp $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.bin \
+	  cp -f $(HF_PPO_DOWNLOAD_DIR)/$(HF_PPO_MODEL_DIR)/cycle-$$cycle/model.bin \
 	    $(PPO_DIR)/cycle-$$cycle/models/model.bin; \
 	done
 
