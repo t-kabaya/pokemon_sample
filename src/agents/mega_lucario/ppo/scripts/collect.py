@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import argparse
 import json
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -231,10 +232,65 @@ def collect(
                 ]
             elif name == "mega_lucario_gbdt":
                 command += [f"--model-{letter}", str(gbdt_model.resolve())]
-        result = subprocess.run(
-            command, capture_output=True, text=True, check=True, timeout=max(300, count * 10)
-        )
-        records = [json.loads(line) for line in result.stdout.splitlines()]
+        log_dir = output / "logs" / f"{opponent}-seat{seat}"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        prefix = log_dir / f"chunk-{job.batch_start:06d}"
+        stdout_path = prefix.with_suffix(".stdout.log")
+        stderr_path = prefix.with_suffix(".stderr.log")
+        timeout = max(600, count * 10)
+        replay_dir = Path(command[command.index("--replay-dir") + 1])
+        started = time.monotonic()
+        with (
+            prefix.with_suffix(".debug.jsonl").open("w") as debug,
+            stdout_path.open("w") as stdout,
+            stderr_path.open("w") as stderr,
+        ):
+
+            def log_event(event: str, **details: Any) -> None:
+                """Flush per-job diagnostics so interrupted runs retain progress."""
+                debug.write(
+                    json.dumps(
+                        dict(
+                            event=event,
+                            unix_time=time.time(),
+                            elapsed_seconds=time.monotonic() - started,
+                            **details,
+                        )
+                    )
+                    + "\n"
+                )
+                debug.flush()
+
+            log_event("start", command=command, timeout_seconds=timeout)
+            with subprocess.Popen(command, stdout=stdout, stderr=stderr, text=True) as process:
+                log_event("spawn", pid=process.pid)
+                try:
+                    while True:
+                        remaining = timeout - (time.monotonic() - started)
+                        if remaining <= 0:
+                            raise subprocess.TimeoutExpired(command, timeout)
+                        try:
+                            returncode = process.wait(timeout=min(30, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            files = [p for p in replay_dir.rglob("*") if p.is_file()]
+                            log_event(
+                                "progress",
+                                pid=process.pid,
+                                replay_files=len(files),
+                                replay_bytes=sum(p.stat().st_size for p in files),
+                                stdout_bytes=stdout_path.stat().st_size,
+                                stderr_bytes=stderr_path.stat().st_size,
+                            )
+                except BaseException as error:
+                    process.kill()
+                    process.wait()
+                    log_event("aborted", error=repr(error), returncode=process.returncode)
+                    raise
+                log_event("exit", returncode=returncode)
+                if returncode:
+                    raise subprocess.CalledProcessError(returncode, command)
+        records = [json.loads(line) for line in stdout_path.read_text().splitlines()]
         if len(records) != count or any(r["agent_errors"] or r["engine_errors"] for r in records):
             raise ValueError("PPO game errors")
         print(f"Collected {opponent} seat {seat}: {count} games", flush=True)
