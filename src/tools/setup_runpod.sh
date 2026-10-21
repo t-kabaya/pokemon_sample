@@ -20,7 +20,8 @@ Environment:
   HF_MODEL_REPO           Hugging Face model repo, default kaba777/ptcg-mega-lucario-models.
 
 Kaggle credentials:
-  Put kaggle.json at ~/.kaggle/kaggle.json, or provide KAGGLE_USERNAME and
+  Provide KAGGLE_API_TOKEN to skip interactive login automatically.
+  Alternatively, put kaggle.json at ~/.kaggle/kaggle.json, or provide KAGGLE_USERNAME and
   KAGGLE_KEY in the environment. If credentials are missing, the script starts
   "uv run kaggle auth login" so you can complete OAuth in a browser.
 EOF
@@ -158,7 +159,9 @@ uv run python src/tools/install_latest_ppo_cycle.py "$hf_model_repo" \
 
 if [[ "$skip_assets" -eq 0 ]]; then
   if [[ "$skip_kaggle_check" -eq 0 ]]; then
-    if [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
+    if [[ -n "${KAGGLE_API_TOKEN:-}" ]]; then
+      log "Kaggle API token environment variable is available"
+    elif [[ -f "$HOME/.kaggle/kaggle.json" ]]; then
       chmod 600 "$HOME/.kaggle/kaggle.json"
       log "Kaggle API token file is available"
     elif [[ -f "$HOME/.kaggle/credentials.json" ]]; then
