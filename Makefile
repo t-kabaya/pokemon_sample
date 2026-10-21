@@ -49,6 +49,8 @@ PPO_NEXT_CYCLE ?= $(shell expr $(PPO_BASE_CYCLE) + 1)
 PPO_CYCLE_IDS ?= 000 001
 PPO_GAMES ?= 5000
 # Reduced from 64 to 32 after rollout collection timed out on an RTX 4090 instance.
+# Reported CPU utilization fell from 99% to 54%; consider retrying 64 workers now
+# that the minimum rollout timeout has increased from 300 to 600 seconds.
 PPO_WORKERS ?= 32
 PPO_EXTRACT_WORKERS ?= 32
 PPO_ROLLOUT_CHUNK_GAMES ?= 64

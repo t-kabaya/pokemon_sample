@@ -237,6 +237,7 @@ def collect(
         prefix = log_dir / f"chunk-{job.batch_start:06d}"
         stdout_path = prefix.with_suffix(".stdout.log")
         stderr_path = prefix.with_suffix(".stderr.log")
+        # Increased the minimum from 300 to 600 seconds after rollout timeouts.
         timeout = max(600, count * 10)
         replay_dir = Path(command[command.index("--replay-dir") + 1])
         started = time.monotonic()
