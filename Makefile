@@ -48,6 +48,7 @@ PPO_BASE_CYCLE_ID ?= $(shell printf "%03d" $(PPO_BASE_CYCLE))
 PPO_NEXT_CYCLE ?= $(shell expr $(PPO_BASE_CYCLE) + 1)
 PPO_CYCLE_IDS ?= 000 001
 PPO_GAMES ?= 5000
+# Reduced from 64 to 32 after rollout collection timed out on an RTX 4090 instance.
 PPO_WORKERS ?= 32
 PPO_EXTRACT_WORKERS ?= 32
 PPO_ROLLOUT_CHUNK_GAMES ?= 64
